@@ -38,6 +38,7 @@ async function init() {
         }
 
         if (oldVersion <= 1) {
+            console.log('Этап обновления с версии 1 на 2')
             let cursor = await transaction.objectStore('questions').openCursor()
             while (cursor) {
                 const question = cursor.value
@@ -60,6 +61,13 @@ async function init() {
         }
 
         if (oldVersion <= 2) {
+            console.log('Этап обновления с версии 2 на 3')
+            db.deleteObjectStore('topics')
+            const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
+            topics.createIndex('name', 'name')
+            topics.createIndex('needComplete', 'needComplete')
+            topics.createIndex('code', 'code')
+
             let cursor = await transaction.objectStore('questions').openCursor()
             while (cursor) {
                 const question = cursor.value
@@ -90,7 +98,7 @@ async function init() {
 
         transaction = db.transaction('topics', 'readwrite').objectStore('topics')
         for (const topic of json.topics) {
-            await transaction.put(topic, topic.key)
+            await transaction.put(topic)
         }
 
         reimportEducationElements()
@@ -545,6 +553,7 @@ chrome.runtime.onConnect.addListener((port) => {
             let topicKey = await db.getKeyFromIndex('topics', 'name', message.question.topics[0])
             if (!topicKey) {
                 topicKey = await db.put('topics', {name: message.question.topics[0]})
+                console.log('Внесена новая тема в базу', message.question.topics[0])
                 await searchOn24forcare(message.question.topics[0], topicKey)
             }
             const key = await db.getKeyFromIndex('questions', 'question', message.question.question)
@@ -670,6 +679,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 let topicKey = await db.getKeyFromIndex('topics', 'name', resultQuestion.topics[0])
                 if (!topicKey) {
                     topicKey = await db.put('topics', {name: resultQuestion.topics[0]})
+                    console.log('Внесена новая тема в базу', resultQuestion.topics[0])
                     // await searchOn24forcare(resultQuestion.topics[0], topicKey)
                 }
                 let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
@@ -1093,7 +1103,6 @@ async function searchOn24forcare(topic, topicKey) {
                 }
             }
         }
-        // await db.put('topics', origNameTopic)
         console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + ' окончен')
     } catch (error) {
         console.error('Ошибка поиска ответов на сайте 24forcare.com', error)
