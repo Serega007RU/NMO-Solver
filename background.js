@@ -17,7 +17,7 @@ initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
     // noinspection JSUnusedGlobalSymbols
     db = await openDB('nmo', 3, {upgrade})
-    // noinspection JSUnusedLocalSymbols
+    self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
             console.log('Обновление базы данных с версии ' + oldVersion + ' на ' + newVersion)
@@ -86,7 +86,7 @@ async function init() {
             }
         }
     }
-    self.db = db  // TODO временно
+
     if (firstInit) {
         console.log('первая загрузка, загружаем ответы в базу данных')
         let response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
@@ -101,7 +101,7 @@ async function init() {
             await transaction.put(topic)
         }
 
-        reimportEducationElements()
+        await reimportEducationElements()
     }
     console.log('started background!')
 }
@@ -1122,6 +1122,9 @@ async function searchOn24forcare(topic, topicKey) {
                 }
                 if (question.correctAnswers['unknown']?.length === 0) {
                     delete question.correctAnswers['unknown']
+                }
+                if (question.topics && !question.topics.includes(topicKey)) {
+                    question.topics.push(topicKey)
                 }
                 if (!key) {
                     changed = true
