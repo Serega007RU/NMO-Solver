@@ -372,7 +372,7 @@ async function runTest() {
                     answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => replaceBadSymbols(item.textContent)).sort()
                 },
                 correct: Boolean(el.querySelector('[svgicon="correct"]')),
-                topic: topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', ''),
+                topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')],
                 lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
             }
             results.push(question)
@@ -399,7 +399,7 @@ async function runTest() {
             type: document.querySelector('.mat-card-question__type').textContent.trim(),
             answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => replaceBadSymbols(item.textContent)).sort()
         },
-        topic: topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', ''),
+        topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
     port.postMessage({question})

@@ -1,6 +1,6 @@
 import { openDB } from '/libs/idb.js';
 
-let db = await openDB('nmo', 1)
+let db = await openDB('nmo', 6)
 let questions = await db.getAll('questions')
 const text = JSON.stringify(questions)
 const blob = new Blob([text],{type: 'text/json;charset=UTF-8;'})

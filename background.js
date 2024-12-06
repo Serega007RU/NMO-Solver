@@ -16,9 +16,13 @@ const initializeFunc = init()
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
     // noinspection JSUnusedGlobalSymbols
-    db = await openDB('nmo', 1, {upgrade})
+    db = await openDB('nmo', 2, {upgrade})
     // noinspection JSUnusedLocalSymbols
-    function upgrade(db, oldVersion, newVersion, transaction) {
+    async function upgrade(db, oldVersion, newVersion, transaction) {
+        if (oldVersion !== newVersion) {
+            console.log('Обновление базы данных с версии ' + oldVersion + ' на ' + newVersion)
+        }
+
         if (oldVersion === 0) {
             firstInit = true
             const questions = db.createObjectStore('questions', {autoIncrement: true})
@@ -28,6 +32,29 @@ async function init() {
             const topics = db.createObjectStore('topics', {autoIncrement: true})
             topics.createIndex('name', '')
             db.createObjectStore('other')
+            return
+        }
+
+        if (oldVersion <= 1) {
+            let cursor = await transaction.objectStore('questions').openCursor()
+            while (cursor) {
+                const question = cursor.value
+                if (question.topic) {
+                    let topic = question.topic
+                    topic = topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')
+                    if (topic.startsWith('Тест с ответами по теме «')) {
+                        topic = topic.replaceAll('Тест с ответами по теме «', '')
+                        topic = topic.slice(0, -1)
+                    }
+                    question.topics = [topic]
+                    delete question.topic
+                } else {
+                    question.topics = []
+                }
+                await cursor.update(question)
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
+            }
         }
     }
     self.db = db  // TODO временно
@@ -52,19 +79,26 @@ async function init() {
     console.log('started background!')
 }
 
-chrome.contextMenus.create({
-    id: 'download',
-    title: 'Скачать базу данных',
-    contexts: ['action']
-})
-chrome.contextMenus.onClicked.addListener((info) => {
-    if (!initializeFunc.done) {
-        chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
-        return
-    }
-    if (info.menuItemId === 'download') {
-        chrome.tabs.create({url: 'options/options.html'})
-    }
+self.addEventListener('install', () => {
+    chrome.contextMenus.create({
+        id: 'download',
+        title: 'Скачать базу данных',
+        contexts: ['action']
+    })
+    chrome.contextMenus.onClicked.addListener((info) => {
+        if (!initializeFunc.done) {
+            chrome.notifications.create('warn', {
+                type: 'basic',
+                message: 'Идёт инициализация базы данных, подождите',
+                title: 'Подождите',
+                iconUrl: 'icon.png'
+            })
+            return
+        }
+        if (info.menuItemId === 'download') {
+            chrome.tabs.create({url: 'options/options.html'})
+        }
+    })
 })
 
 self.reimportEducationElements = reimportEducationElements
@@ -104,6 +138,7 @@ async function searchDupQuestions() {
         if (count > 1) {
             console.warn('Найден дубликат', cursor.value.question)
         }
+        // noinspection JSVoidFunctionReturnValueUsed
         cursor = await cursor.continue()
     }
 }
@@ -132,9 +167,11 @@ async function joinQuestions() {
                     question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
                 }
             }
-            if (!question.topic && newQuestion.topic) {
-                changed = true
-                question.topic = newQuestion.topic
+            for (const topic of newQuestion.topics) {
+                if (!question.topics.includes(topic)) {
+                    changed = true
+                    question.topics.push(topic)
+                }
             }
             if (changed) {
                 console.log('обновлён', question)
@@ -502,7 +539,6 @@ chrome.runtime.onConnect.addListener((port) => {
                         console.log('добавлены новые варианты ответов', question)
                     }
                     port.postMessage(answers)
-                    await db.put('questions', question, key)
                 // если найден и вопрос и к нему вариант ответов
                 } else {
                     if (!question.lastOrder) question.lastOrder = {}
@@ -555,8 +591,11 @@ chrome.runtime.onConnect.addListener((port) => {
                         // }
                         port.postMessage(answers)
                     }
-                    await db.put('questions', question, key)
                 }
+                if (!question.topics.includes(message.question.topics[0])) {
+                    question.topics.push(message.question.topics[0])
+                }
+                await db.put('questions', question, key)
             // добавление вопроса с его вариантами ответов
             } else {
                 const question = message.question
@@ -586,7 +625,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         const correctQuestion = {
                             question: resultQuestion.question,
                             answers: {},
-                            topic: resultQuestion.topic,
+                            topics: resultQuestion.topics,
                             correctAnswers: {'unknown': resultQuestion.answers.answers}
                         }
                         key = await db.put('questions', correctQuestion)
@@ -748,6 +787,10 @@ chrome.runtime.onConnect.addListener((port) => {
                     if (foundAnswerHash) {
                         changedCombinations = true
                         delete question.lastOrder[resultQuestion.lastOrder]
+
+                        if (!question.topics.includes(resultQuestion.topics[0])) {
+                            question.topics.push(resultQuestion.topics[0])
+                        }
                     }
 
                     if (changedAnswers || changedCombinations) {
