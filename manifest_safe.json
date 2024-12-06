@@ -1,0 +1,31 @@
+{
+	"short_name": "nmo",
+	"author": "Serega007",
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
+	"content_scripts": [
+		{
+			"matches": ["https://*.edu.rosminzdrav.ru/*"],
+			"js": ["content-script.js"]
+		}
+	],
+	"description": "Автоматическое решение тестов на портале НМО",
+	"manifest_version": 3,
+	"name": "НМО Решатель",
+	"permissions": [
+		"unlimitedStorage",
+		"notifications"
+	],
+	"host_permissions": [
+		"https://24forcare.com/*",
+		"https://groq.com/*"
+	],
+    "action": {
+        "default_title": "Нажмите что бы запустить"
+    },
+	"update_url": "https://clients2.google.com/service/update2/crx",
+	"version": "1.0.0",
+	"minimum_chrome_version": "105.0"
+}
