@@ -264,7 +264,7 @@ async function checkOrGetEducationElements(parameters) {
                     method: 'POST',
                     signal: AbortSignal.timeout(60000)
                 })
-                if (!response.ok) throw Error('bad code ' + response.status)
+                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 let json = await response.json()
                 if (!await checkErrors(json, parameters)) return
                 if (!json?.elements?.length) {
@@ -283,7 +283,7 @@ async function checkOrGetEducationElements(parameters) {
                         method: 'GET',
                         signal: AbortSignal.timeout(60000)
                     })
-                    if (!response.ok) throw Error('bad code ' + response.status)
+                    if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                     let json2 = await response.json()
                     if (!await checkErrors(json2, parameters)) return
                     if (educationalElement.code) {
@@ -332,7 +332,7 @@ async function checkOrGetEducationElements(parameters) {
                     method: 'GET',
                     signal: AbortSignal.timeout(60000)
                 })
-                if (!response.ok) throw Error('bad code ' + response.status)
+                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 let json2 = await response.json()
                 if (!await checkErrors(json2, parameters)) return
                 if (json2.iomHost?.name) {
@@ -358,7 +358,7 @@ async function checkOrGetEducationElements(parameters) {
                     method: 'PUT',
                     signal: AbortSignal.timeout(60000)
                 })
-                if (!response.ok) throw Error('bad code ' + response.status)
+                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
             } else {
                 if (completed) console.warn('данный элемент уже пройден пользователем ' + elementName)
@@ -373,7 +373,7 @@ async function checkOrGetEducationElements(parameters) {
                     method: 'GET',
                     signal: AbortSignal.timeout(60000)
                 })
-                if (!response.ok && !String(response.status).startsWith('4')) throw Error('bad code ' + response.status)
+                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 json = await response.json()
                 if (!await checkErrors(json, parameters)) return
                 if (json.url) break
