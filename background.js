@@ -239,6 +239,37 @@ async function joinQuestions() {
     console.log('Объединение баз данных окончено')
 }
 
+self.getCorrectAnswers = getCorrectAnswers
+async function getCorrectAnswers(topic) {
+    const result = await db.transaction('topics').store.index('name').openCursor(IDBKeyRange.bound(topic, topic + '\uffff'))
+    if (!result) throw Error('Не найдено')
+    console.log('Найдено', result.value.name)
+    let text = ''
+    let cursor = await db.transaction('questions').store.openCursor()
+    while(cursor) {
+        const question = cursor.value
+        if (question.topics.includes(result.value.key)) {
+            for (const answerHash of Object.keys(question.answers)) {
+                if (question.correctAnswers[answerHash]) {
+                    text += question.question + ':\n'
+                    for (const answer of question.correctAnswers[answerHash]) {
+                        text += '+ ' + answer + '\n'
+                    }
+                    for (const answer of question.answers[answerHash].answers) {
+                        if (!question.correctAnswers[answerHash].includes(answer)) {
+                            text += '- ' + answer + '\n'
+                        }
+                    }
+                    text += '\n'
+                }
+            }
+        }
+        // noinspection JSVoidFunctionReturnValueUsed
+        cursor = await cursor.continue()
+    }
+    return text
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.text === 'get_status') {
         sendResponse({running: runningTab === sender.tab.id, collectAnswers: collectAnswers})
