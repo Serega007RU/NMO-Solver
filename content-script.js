@@ -193,7 +193,8 @@ async function start(collectAnswers) {
 
     await attemptToClosePopups()
 
-    if (document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Скачать сертификат') {
+    if (document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Скачать сертификат' || document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Ожидание выгрузки результатов...') {
+        // await watchForText('.v-align-center .v-button-caption', 'Скачать сертификат')
         if (goodScore && !hasGoodScore) {
             // TODO иногда кнопка Далее активна и есть страница дальше даже после страницы получения сертификата
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
@@ -280,7 +281,7 @@ async function start(collectAnswers) {
         return
     }
 
-    if (!hasSuccessTest && testName === 'Задача') {
+    if (!hasSuccessTest && (testName === 'Задача' || testName === 'Интерактивная ситуационная задача')) {
         const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')
 
         // Нажимаем закрыть вкладку
