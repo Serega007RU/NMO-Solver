@@ -245,7 +245,7 @@ async function checkOrGetEducationElements(parameters) {
             let completed
             let status
             if (!educationalElement.id) {
-                let response = await fetch('https://nmfo-spo.edu.rosminzdrav.ru/api/api/educational-elements/search', {
+                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/search', {
                     headers: {authorization: 'Bearer ' + authData.access_token, 'content-type': 'application/json'},
                     body: JSON.stringify({
                         topicId: null,
@@ -278,7 +278,7 @@ async function checkOrGetEducationElements(parameters) {
                     }
                 }
                 for (const element of json.elements) {
-                    response = await fetch('https://nmfo-spo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + element.elementId + '/', {
+                    response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + element.elementId + '/', {
                         headers: {authorization: 'Bearer ' + authData.access_token},
                         method: 'GET',
                         signal: AbortSignal.timeout(60000)
@@ -327,7 +327,7 @@ async function checkOrGetEducationElements(parameters) {
                 }
             } else {
                 elementId = educationalElement.id
-                let response = await fetch('https://nmfo-spo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/', {
+                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/', {
                     headers: {authorization: 'Bearer ' + authData.access_token},
                     method: 'GET',
                     signal: AbortSignal.timeout(60000)
@@ -353,7 +353,7 @@ async function checkOrGetEducationElements(parameters) {
             }
 
             if (!completed && status !== 'included') {
-                let response = await fetch('https://nmfo-spo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/plan', {
+                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/plan', {
                     headers: {authorization: 'Bearer ' + authData.access_token},
                     method: 'PUT',
                     signal: AbortSignal.timeout(60000)
@@ -368,7 +368,7 @@ async function checkOrGetEducationElements(parameters) {
             let json
             while (count <= 5) {
                 count = count + 1
-                let response = await fetch('https://nmfo-spo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/open-link?backUrl=https%3A%2F%2Fnmfo-spo.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan', {
+                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/open-link?backUrl=https%3A%2F%2Fnmfo-vo.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan', {
                     headers: {authorization: 'Bearer ' + authData.access_token},
                     method: 'GET',
                     signal: AbortSignal.timeout(60000)
@@ -417,7 +417,7 @@ async function checkErrors(json, parameters) {
         if ((json.error_description?.includes('token expired') || json.error_description?.includes('access token')) && !parameters.updatedToken) {
             const authData = await db.get('other', 'authData')
             if (authData?.refresh_token) {
-                const response = await fetch('https://nmfo-spo.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=' + authData.refresh_token, {
+                const response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=' + authData.refresh_token, {
                     headers: {"Content-Type": "application/x-www-form-urlencoded", Authorization: 'Basic ' + btoa(`client:secret`)},
                     method: 'POST',
                     signal: AbortSignal.timeout(60000)

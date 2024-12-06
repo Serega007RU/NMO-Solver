@@ -16,7 +16,8 @@
 	"name": "НМО Решатель",
 	"permissions": [
 		"unlimitedStorage",
-		"notifications"
+		"notifications",
+		"contextMenus"
 	],
 	"host_permissions": [
 		"https://24forcare.com/*",
