@@ -1,6 +1,6 @@
 import { openDB } from '/libs/idb.js';
 import { default as objectHash } from '/libs/object-hash.js';
-import {JSDOM} from '/libs/jsdom.js';
+import { JSDOM } from '/libs/jsdom.js';
 
 self.JSDOM = JSDOM // TODO для меньшей нагрузки следует эту реализацию заменить на API chrome.offscreen (ну и говно-код же получится с его использованием)
 self.objectHash = objectHash
@@ -51,6 +51,21 @@ async function init() {
     }
     console.log('started background!')
 }
+
+chrome.contextMenus.create({
+    id: 'download',
+    title: 'Скачать базу данных',
+    contexts: ['action']
+})
+chrome.contextMenus.onClicked.addListener((info) => {
+    if (!initializeFunc.done) {
+        chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
+        return
+    }
+    if (info.menuItemId === 'download') {
+        chrome.tabs.create({url: 'options/options.html'})
+    }
+})
 
 self.reimportEducationElements = reimportEducationElements
 async function reimportEducationElements() {

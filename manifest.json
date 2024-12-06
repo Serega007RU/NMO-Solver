@@ -24,7 +24,7 @@
 	"permissions": [
 		"unlimitedStorage",
 		"notifications",
-		"scripting"
+		"contextMenus"
 	],
 	"host_permissions": [
 		"https://24forcare.com/*",
