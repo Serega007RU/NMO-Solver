@@ -21,10 +21,18 @@
 	"description": "Автоматическое решение тестов на портале НМО",
 	"manifest_version": 3,
 	"name": "НМО Решатель",
+	"declarative_net_request" : {
+		"rule_resources" : [{
+			"id": "ruleset_1",
+			"enabled": true,
+			"path": "rules_1.json"
+		}]
+	},
 	"permissions": [
 		"unlimitedStorage",
 		"notifications",
-		"contextMenus"
+		"contextMenus",
+		"declarativeNetRequest"
 	],
 	"host_permissions": [
 		"https://24forcare.com/*",
