@@ -412,11 +412,29 @@ async function joinQuestions() {
 }
 
 self.getCorrectAnswers = getCorrectAnswers
-async function getCorrectAnswers(topic) {
-    const result = await db.transaction('topics').store.index('name').openCursor(IDBKeyRange.bound(topic, topic + '\uffff'))
-    if (!result) throw Error('Не найдено')
-    console.log('Найдено', result.value.name)
-    let text = ''
+async function getCorrectAnswers(topic, index) {
+    topic = topic.toLowerCase()
+    let searchCursor = await db.transaction('topics').store.index('name').openCursor(IDBKeyRange.bound(topic, topic + '\uffff'))
+    if (!searchCursor) throw Error('Не найдено')
+    let currIndex = 0
+    let result
+    while (searchCursor) {
+        result = searchCursor
+        currIndex++
+        if (index == null || currIndex === index) {
+            console.log(currIndex, searchCursor.value.name)
+        }
+        if (currIndex === index) break
+        // noinspection JSVoidFunctionReturnValueUsed
+        searchCursor = await searchCursor.continue()
+    }
+    if (currIndex > 1 && index == null) {
+        console.log('По заданному названию найдено несколько тем, в качестве второго аргумента данной функции укажите номер из предложенных вариантов')
+        return
+    }
+    if (!searchCursor) throw Error('Не найдено по заданному номеру')
+    console.log('Поиск...')
+    let text = result.value.name + ':\n\n'
     let cursor = await db.transaction('questions').store.openCursor()
     while(cursor) {
         const question = cursor.value
