@@ -16,7 +16,7 @@ const initializeFunc = init()
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
     // noinspection JSUnusedGlobalSymbols
-    db = await openDB('nmo', 4, {upgrade})
+    db = await openDB('nmo', 5, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -89,6 +89,58 @@ async function init() {
             console.log('Этап обновления с версии 3 на 4')
             db.deleteObjectStore('educational-elements')
             transaction.objectStore('topics').createIndex('id', 'id')
+        }
+
+        if (oldVersion <= 4) {
+            console.log('Этап обновления с версии 4 на 5')
+            let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
+            while (cursor) {
+                const question = cursor.value
+
+                question.question = question.question.toLowerCase()
+
+                for (const answerHash of Object.keys(question.answers)) {
+                    const newAnswers = []
+                    for (const answer of question.answers[answerHash].answers) {
+                        newAnswers.push(answer.toLowerCase())
+                    }
+                    newAnswers.sort()
+                    const newAnswer = question.answers[answerHash]
+                    const newAnswerHash = objectHash(newAnswers)
+
+                    delete question.answers[answerHash]
+                    // TODO мы удаляем комбинации так как меняется сортировка вопросов из-за разного регистра букв
+                    delete newAnswer.combinations
+                    newAnswer.answers = newAnswers
+                    if (question.answers[newAnswerHash]) {
+                        console.warn('Найдены дублирующиеся ответы', JSON.stringify(question), question)
+                    }
+                    question.answers[newAnswerHash] = newAnswer
+
+                    if (question.correctAnswers[answerHash]) {
+                        const newCorrectAnswers = []
+                        for (const answer of question.correctAnswers[answerHash]) {
+                            newCorrectAnswers.push(answer.toLowerCase())
+                        }
+                        delete question.correctAnswers[answerHash]
+                        question.correctAnswers[newAnswerHash] = newCorrectAnswers
+                    }
+                }
+
+                await cursor.update(question)
+
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
+            }
+
+            let cursor2 = await transaction.objectStore('topics', 'readwrite').openCursor()
+            while (cursor2) {
+                const topic = cursor2.value
+                topic.name = topic.name.toLowerCase()
+                await cursor2.update(topic)
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor2 = await cursor2.continue()
+            }
         }
 
         console.log('Обновление базы данных завершено')
@@ -198,7 +250,7 @@ async function searchDupQuestions() {
     while (cursor) {
         const count = await transaction.index('question').count(cursor.value.question)
         if (count > 1) {
-            console.warn('Найден дубликат', cursor.value.question)
+            console.warn('Найден дубликат', cursor.value)
         }
         // noinspection JSVoidFunctionReturnValueUsed
         cursor = await cursor.continue()
@@ -1142,7 +1194,7 @@ async function searchOn24forcare(topic, topicKey) {
             console.log('Найдено ' + topicText)
             for (const el of doc2.querySelectorAll('.row h3')) {
                 if (el.querySelector('tt') || el.querySelector('em')) continue // обрезаем всякую рекламу
-                const questionText = changeLetters(el.textContent.trim().replace(/^\d+\.\s*/, ''))
+                const questionText = changeLetters(el.textContent.trim().replace(/^\d+\.\s*/, '')).toLowerCase()
                 const key = await db.getKeyFromIndex('questions', 'question', questionText)
                 let question = {answers: {}, correctAnswers: {}}
                 if (key) {
@@ -1153,7 +1205,7 @@ async function searchOn24forcare(topic, topicKey) {
                 for (const answer of el.nextElementSibling.childNodes) {
                     if (!answer.textContent.trim()) continue
                     // noinspection RegExpRedundantEscape
-                    const text = changeLetters(answer.textContent.trim()).replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, '')
+                    const text = changeLetters(answer.textContent.trim()).replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, '').toLowerCase()
                     if (answer.tagName === 'STRONG') {
                         correctAnswers.push(text)
                     }

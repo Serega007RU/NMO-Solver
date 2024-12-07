@@ -91,7 +91,7 @@ async function portListener(message) {
 
     for (const answer of message.sort(() => 0.5 - Math.random())) {
         for (const el of document.querySelectorAll('.question-inner-html-text:not([disabled="true"])')) {
-            if (replaceBadSymbols(el.textContent) === answer) {
+            if (replaceBadSymbols(el.textContent).toLowerCase() === answer) {
                 let element
                 // выбираем между radio (или checkbox) и span (ответ с текстом)
                 if (Math.random() < 0.75) {
@@ -200,7 +200,7 @@ async function start(collectAnswers) {
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
             await watchForElement('.c-table-clickable-cell')
         } else {
-            const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')
+            const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -282,7 +282,7 @@ async function start(collectAnswers) {
     }
 
     if (!hasSuccessTest && (testName === 'Задача' || testName === 'Интерактивная ситуационная задача')) {
-        const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')
+        const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()
 
         // Нажимаем закрыть вкладку
         await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -367,13 +367,13 @@ async function runTest() {
         const results = []
         for (const el of correctAnswersElements) {
             const question = {
-                question: replaceBadSymbols(el.querySelector('.questionList-item-content-title').textContent),
+                question: replaceBadSymbols(el.querySelector('.questionList-item-content-title').textContent).toLowerCase(),
                 answers: {
                     type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
-                    answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => replaceBadSymbols(item.textContent)).sort()
+                    answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => replaceBadSymbols(item.textContent).toLowerCase()).sort()
                 },
                 correct: Boolean(el.querySelector('[svgicon="correct"]')),
-                topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')],
+                topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()],
                 lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
             }
             results.push(question)
@@ -395,12 +395,12 @@ async function runTest() {
     }
 
     const question = {
-        question: replaceBadSymbols(document.querySelector('.question-title-text').textContent),
+        question: replaceBadSymbols(document.querySelector('.question-title-text').textContent).toLowerCase(),
         answers: {
             type: document.querySelector('.mat-card-question__type').textContent.trim(),
-            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => replaceBadSymbols(item.textContent)).sort()
+            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => replaceBadSymbols(item.textContent).toLowerCase()).sort()
         },
-        topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')],
+        topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
     port.postMessage({question})
