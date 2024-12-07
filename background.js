@@ -119,15 +119,14 @@ self.addEventListener('install', () => {
         title: 'Скачать базу данных',
         contexts: ['action']
     })
-    chrome.contextMenus.onClicked.addListener((info) => {
+    chrome.contextMenus.onClicked.addListener(async (info) => {
         if (!initializeFunc.done) {
-            chrome.notifications.create('warn', {
-                type: 'basic',
-                message: 'Идёт инициализация базы данных, подождите',
-                title: 'Подождите',
-                iconUrl: 'icon.png'
-            })
-            return
+            if (firstInit) {
+                chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
+                return
+            } else {
+                await initializeFunc
+            }
         }
         if (info.menuItemId === 'download') {
             chrome.tabs.create({url: 'options/options.html'})
@@ -192,19 +191,19 @@ async function reimportEducationElements() {
     }
 }
 
-// self.searchDupQuestions = searchDupQuestions
-// async function searchDupQuestions() {
-//     let transaction = db.transaction('questions').objectStore('questions')
-//     let cursor = await transaction.openCursor()
-//     while (cursor) {
-//         const count = await transaction.index('question').count(cursor.value.question)
-//         if (count > 1) {
-//             console.warn('Найден дубликат', cursor.value.question)
-//         }
-//         // noinspection JSVoidFunctionReturnValueUsed
-//         cursor = await cursor.continue()
-//     }
-// }
+self.searchDupQuestions = searchDupQuestions
+async function searchDupQuestions() {
+    let transaction = db.transaction('questions').objectStore('questions')
+    let cursor = await transaction.openCursor()
+    while (cursor) {
+        const count = await transaction.index('question').count(cursor.value.question)
+        if (count > 1) {
+            console.warn('Найден дубликат', cursor.value.question)
+        }
+        // noinspection JSVoidFunctionReturnValueUsed
+        cursor = await cursor.continue()
+    }
+}
 
 self.joinQuestions = joinQuestions
 async function joinQuestions() {
@@ -318,10 +317,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 })
 
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener(async (tab) => {
     if (!initializeFunc.done) {
-        chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
-        return
+        if (firstInit) {
+            chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
+            return
+        } else {
+            await initializeFunc
+        }
     }
     chrome.tabs.sendMessage(tab.id, {text: 'get_status'}, async (msg) => {
         const error = chrome.runtime.lastError?.message
