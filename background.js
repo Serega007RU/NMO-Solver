@@ -16,7 +16,7 @@ const initializeFunc = init()
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
     // noinspection JSUnusedGlobalSymbols
-    db = await openDB('nmo', 5, {upgrade})
+    db = await openDB('nmo', 6, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -140,6 +140,72 @@ async function init() {
                 await cursor2.update(topic)
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor2 = await cursor2.continue()
+            }
+        }
+
+        if (oldVersion <= 5) {
+            console.log('Этап обновления с версии 5 на 6')
+            let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
+            while (cursor) {
+                const count = await transaction.objectStore('questions').index('question').count(cursor.value.question)
+                if (count > 1) {
+                    console.warn('Найден дубликат', cursor.value)
+                    let cursor2 = await transaction.objectStore('questions', 'readwrite').index('question').openCursor(cursor.value.question)
+                    const question = cursor2.value
+                    // noinspection JSVoidFunctionReturnValueUsed
+                    cursor2 = await cursor2.continue()
+                    let changed = false
+                    while (cursor2) {
+                        for (const answersHash of Object.keys(cursor2.value.answers)) {
+                            if (!question.answers[answersHash] || (!question.answers[answersHash].type && cursor2.value.answers[answersHash].type)) {
+                                changed = true
+                                question.answers[answersHash] = cursor2.value.answers[answersHash]
+                            }
+                            if (!question.correctAnswers[answersHash] && cursor2.value.correctAnswers[answersHash]) {
+                                changed = true
+                                question.correctAnswers[answersHash] = cursor2.value.correctAnswers[answersHash]
+                            }
+                        }
+
+                        if (cursor2.value.answers['unknown']) {
+                            if (question.answers['unknown'] == null) question.answers['unknown'] = []
+                            for (const answer of cursor2.value.answers['unknown']) {
+                                if (!question.answers['unknown'].includes(answer)) {
+                                    changed = true
+                                    question.answers['unknown'].push(answer)
+                                }
+                            }
+                        }
+                        if (cursor2.value.correctAnswers['unknown']) {
+                            if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
+                            for (const answer of cursor2.value.correctAnswers['unknown']) {
+                                if (!question.correctAnswers['unknown'].includes(answer)) {
+                                    changed = true
+                                    question.correctAnswers['unknown'].push(answer)
+                                }
+                            }
+                        }
+
+                        for (const topic of cursor2.value.topics) {
+                            if (!question.topics.includes(topic)) {
+                                changed = true
+                                question.topics.push(topic)
+                            }
+                        }
+
+                        console.warn('Удалено', cursor2.value)
+                        await cursor2.delete()
+
+                        // noinspection JSVoidFunctionReturnValueUsed
+                        cursor2 = await cursor2.continue()
+                    }
+                    if (changed) {
+                        console.warn('Данные объеденины в', question)
+                        await cursor.update(question)
+                    }
+                }
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
             }
         }
 
@@ -297,6 +363,25 @@ async function joinQuestions() {
                 if (!question.correctAnswers[answersHash] && newQuestion.correctAnswers[answersHash]) {
                     changed = true
                     question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
+                }
+            }
+
+            if (newQuestion.answers['unknown']) {
+                if (question.answers['unknown'] == null) question.answers['unknown'] = []
+                for (const answer of newQuestion.answers['unknown']) {
+                    if (!question.answers['unknown'].includes(answer)) {
+                        changed = true
+                        question.answers['unknown'].push(answer)
+                    }
+                }
+            }
+            if (newQuestion.correctAnswers['unknown']) {
+                if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
+                for (const answer of newQuestion.correctAnswers['unknown']) {
+                    if (!question.correctAnswers['unknown'].includes(answer)) {
+                        changed = true
+                        question.correctAnswers['unknown'].push(answer)
+                    }
                 }
             }
 
