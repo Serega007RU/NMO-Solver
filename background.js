@@ -13,9 +13,9 @@ let reloaded = 0
 
 let firstInit = false
 const initializeFunc = init()
+waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    // noinspection JSUnusedGlobalSymbols
     db = await openDB('nmo', 6, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
@@ -1368,4 +1368,13 @@ function changeLetters(str) {
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitUntil(promise) {
+    const keepAlive = setInterval(chrome.runtime.getPlatformInfo, 25 * 1000)
+    try {
+        await promise
+    } finally {
+        clearInterval(keepAlive)
+    }
 }
