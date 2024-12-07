@@ -1370,6 +1370,7 @@ function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// тупорылый костыль (официально одобренный самим гуглом) на то что б Service Worker не отключался во время выполнения кода
 async function waitUntil(promise) {
     const keepAlive = setInterval(chrome.runtime.getPlatformInfo, 25 * 1000)
     try {

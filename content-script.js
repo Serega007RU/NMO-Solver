@@ -1,7 +1,7 @@
-let simulateUser = true
+let simulateUser = false
 let minWait = 500
 let maxWait = 2000
-let goodScore = false
+let goodScore = true
 
 let hasGoodScore = false
 let port
@@ -421,7 +421,7 @@ function watchForElement(selector, reverse) {
             port.postMessage({reloaded: true})
             document.location.reload()
         // }, Math.floor(Math.random() * (30000 - 15000) + 15000))
-        }, Math.floor(Math.random() * (500000 - 180000) + 180000))
+        }, Math.floor(Math.random() * (60000 - 30000) + 30000))
 
         rejectWait = () => {
             stop()
@@ -462,7 +462,7 @@ function watchForText(selector, text, reverse) {
             port.postMessage({reloaded: true})
             document.location.reload()
         // }, Math.floor(Math.random() * (30000 - 15000) + 15000))
-        }, Math.floor(Math.random() * (500000 - 180000) + 180000))
+        }, Math.floor(Math.random() * (60000 - 30000) + 30000))
 
         rejectWait = () => {
             stop()
