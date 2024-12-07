@@ -16,7 +16,7 @@ const initializeFunc = init()
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
     // noinspection JSUnusedGlobalSymbols
-    db = await openDB('nmo', 3, {upgrade})
+    db = await openDB('nmo', 4, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -27,12 +27,11 @@ async function init() {
             firstInit = true
             const questions = db.createObjectStore('questions', {autoIncrement: true})
             questions.createIndex('question', 'question')
-            const educationalElements = db.createObjectStore('educational-elements', {autoIncrement: true})
-            educationalElements.createIndex('name', 'name')
             const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
             topics.createIndex('name', 'name')
             topics.createIndex('needComplete', 'needComplete')
             topics.createIndex('code', 'code')
+            topics.createIndex('id', 'id')
             db.createObjectStore('other')
             return
         }
@@ -85,6 +84,14 @@ async function init() {
                 cursor = await cursor.continue()
             }
         }
+
+        if (oldVersion <= 3) {
+            console.log('Этап обновления с версии 3 на 4')
+            db.deleteObjectStore('educational-elements')
+            transaction.objectStore('topics').createIndex('id', 'id')
+        }
+
+        console.log('Обновление базы данных завершено')
     }
 
     if (firstInit) {
@@ -130,10 +137,18 @@ self.addEventListener('install', () => {
 
 self.reimportEducationElements = reimportEducationElements
 async function reimportEducationElements() {
-    await db.clear('educational-elements')
     const response = await fetch(chrome.runtime.getURL('data/educational-elements.txt'))
     const text = await response.text()
-    const transaction = db.transaction('educational-elements', 'readwrite').objectStore('educational-elements')
+
+    const transaction = db.transaction('topics', 'readwrite').objectStore('topics')
+    let cursor = await transaction.index('needComplete').openCursor(1)
+    while (cursor) {
+        delete cursor.value.needComplete
+        await cursor.update(cursor.value)
+        // noinspection JSVoidFunctionReturnValueUsed
+        cursor = await cursor.continue()
+    }
+
     for (const educationalElement of text.split(/\r?\n/)) {
         if (!educationalElement) continue
         // let ee = educationalElement.split(':')
@@ -152,7 +167,28 @@ async function reimportEducationElements() {
             object.code = ee[0].trim()
             object.name = ee[1].trim()
         }
-        await transaction.add(object)
+
+        let topic
+        if (object.id) {
+            topic = await transaction.index('id').get(object.id)
+        }
+        if (!topic && object.code) {
+            topic = await transaction.index('code').get(object.code)
+        }
+        if (!topic) {
+            topic = await transaction.index('name').get(object.name)
+        }
+        if (topic) {
+            topic.needComplete = 1
+            if (object.id && !topic.id) topic.id = object.id
+            if (object.code && !topic.code) topic.code = object.code
+            console.log('Обновлён', topic)
+        } else {
+            topic = object
+            topic.needComplete = 1
+            console.log('Добавлен', topic)
+        }
+        await transaction.put(topic)
     }
 }
 
@@ -338,21 +374,20 @@ async function checkOrGetEducationElements(parameters) {
     await initializeFunc
     reloaded = 0
     try {
-        let countEE = await db.count('educational-elements')
+        let countEE = await db.countFromIndex('topics', 'needComplete', 1)
         if (countEE && parameters.topic) {
-            const key = await db.getKeyFromIndex('educational-elements', 'name', parameters.topic)
-            if (key) {
+            const topic = await db.getFromIndex('topics', 'name', parameters.topic)
+            if (topic) {
                 console.log('решено', parameters.topic)
-                await db.delete('educational-elements', key)
-                parameters.topic = null
-                countEE = await db.count('educational-elements')
+                delete topic.needComplete
+                await db.put('topics', topic)
+                countEE = await db.countFromIndex('topics', 'needComplete', 1)
             } else {
                 console.warn('Название темы не найдено', parameters.topic)
             }
         }
         if (countEE) {
-            const cursor = await db.transaction('educational-elements').store.openCursor()
-            let educationalElement = cursor.value
+            let educationalElement = await db.getFromIndex('topics', 'needComplete', 1)
             if (parameters.cut) {
                 educationalElement.name = educationalElement.name.slice(0, -10)
                 console.log('ищем (урезанное название)', educationalElement)
@@ -365,10 +400,7 @@ async function checkOrGetEducationElements(parameters) {
                 throw Error('Нет данных авторизации')
             }
 
-            let elementId
-            let elementName
-            let completed
-            let status
+            let elementId, elementName, completed, status, code
             if (!educationalElement.id) {
                 let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/search', {
                     headers: {authorization: 'Bearer ' + authData.access_token, 'content-type': 'application/json'},
@@ -425,6 +457,7 @@ async function checkOrGetEducationElements(parameters) {
                             elementName = json2.name.trim()
                             completed = json2.completed
                             status = json2.status
+                            code = json2.number
                             break
                         }
                     } else if (json.elements.length > 1) {
@@ -435,6 +468,7 @@ async function checkOrGetEducationElements(parameters) {
                         elementName = json2.name.trim()
                         completed = json2.completed
                         status = json2.status
+                        code = json2.number
                     }
                 }
                 if (!elementId) {
@@ -445,10 +479,25 @@ async function checkOrGetEducationElements(parameters) {
                         console.warn('Названия не соответствуют:')
                         console.warn(educationalElement.name)
                         console.warn(elementName)
+                        let topic
+                        if (educationalElement.code) {
+                            topic = await db.getFromIndex('topics', 'code', educationalElement.code)
+                        }
+                        if (!topic) {
+                            topic = await db.getFromIndex('topics', 'name', elementName)
+                        }
+                        if (topic && topic.key !== educationalElement.key) {
+                            console.warn('Найден дублирующий topic, для исправления удалён и переназначен key', JSON.stringify(educationalElement), JSON.stringify(topic))
+                            await db.delete('topics', educationalElement.key)
+                            educationalElement.key = topic.key
+                        }
                     }
                     educationalElement.id = elementId
                     educationalElement.name = elementName
-                    await db.put('educational-elements', educationalElement, cursor.key)
+                    // educationalElement.completed = completed
+                    // educationalElement.status = status
+                    educationalElement.code = code
+                    await db.put('topics', educationalElement)
                 }
             } else {
                 elementId = educationalElement.id
@@ -460,21 +509,33 @@ async function checkOrGetEducationElements(parameters) {
                 if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 let json2 = await response.json()
                 if (!await checkErrors(json2, parameters)) return
+                if (!educationalElement.name || !educationalElement.code) {
+                    educationalElement.name = json2.name.trim()
+                    educationalElement.code = json2.number
+                    let topic = await db.getFromIndex('topics', 'code', educationalElement.code)
+                    if (!topic) {
+                        topic = await db.getFromIndex('topics', 'name', educationalElement.name)
+                    }
+                    if (topic && topic.key !== educationalElement.key) {
+                        console.warn('Найден дублирующий topic, для исправления удалён и переназначен key', JSON.stringify(educationalElement), JSON.stringify(topic))
+                        await db.delete('topics', educationalElement.key)
+                        educationalElement.key = topic.key
+                    }
+                    await db.put('topics', educationalElement)
+                }
                 if (json2.iomHost?.name) {
                     if (!json2.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
                         console.warn('Данный элемент не возможно пройти так как платформа там другая', educationalElement)
-                        await db.delete('educational-elements', cursor.key)
+                        delete educationalElement.needComplete
+                        await db.put('topics', educationalElement)
                         checkOrGetEducationElements(parameters)
                         return
                     }
                 }
-                if (!educationalElement.name) {
-                    educationalElement.name = json2.name.trim()
-                    await db.put('educational-elements', educationalElement, cursor.key)
-                }
                 elementName = json2.name.trim()
                 completed = json2.completed
                 status = json2.status
+                // code = json2.number
             }
 
             if (!completed && status !== 'included') {
