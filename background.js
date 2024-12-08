@@ -1024,11 +1024,19 @@ chrome.runtime.onConnect.addListener((port) => {
                             question.correctAnswers['unknown'] = Array.from(new Set(question.correctAnswers['unknown'].concat(resultQuestion.answers.answers)))
                             changedAnswers = oldAnswers !== JSON.stringify(question.correctAnswers)
                         } else {
+                            let fakeCorrectAnswers = false
                             if (question.correctAnswers[matchAnswers[0]]) {
                                 if (JSON.stringify(question.correctAnswers[matchAnswers[0]]) !== JSON.stringify(resultQuestion.answers.answers)) {
-                                    console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы?', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.answers))
-                                    changedAnswers = true
-                                    question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.answers
+                                    if (!question.answers[matchAnswers[0]].fakeCorrectAnswers) {
+                                        fakeCorrectAnswers = true
+                                        changedCombinations = true
+                                        question.answers[matchAnswers[0]].fakeCorrectAnswers = true
+                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Возможно это сбой какой-то', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.answers))
+                                    } else {
+                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Были перезаписаны правильные ответы', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.answers))
+                                        changedAnswers = true
+                                        question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.answers
+                                    }
                                 }
                             } else {
                                 changedAnswers = true
@@ -1051,7 +1059,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 changedAnswers = true
                                 delete question.correctAnswers['unknown']
                             }
-                            if (question.answers[matchAnswers[0]].fakeCorrectAnswers) {
+                            if (!fakeCorrectAnswers && question.answers[matchAnswers[0]].fakeCorrectAnswers) {
                                 changedCombinations = true
                                 delete question.answers[matchAnswers[0]].fakeCorrectAnswers
                             }
