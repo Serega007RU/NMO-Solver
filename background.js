@@ -302,11 +302,11 @@ async function reimportEducationElements() {
             if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(ee[0])) {
                 object.id = ee[0]
             } else {
-                object.name = ee[0].trim()
+                object.name = ee[0].trim().toLowerCase()
             }
         } else if (ee[0]?.trim() && ee[1]?.trim()) {
             object.code = ee[0].trim()
-            object.name = ee[1].trim()
+            object.name = ee[1].trim().toLowerCase()
         }
 
         let topic
@@ -636,7 +636,7 @@ async function checkOrGetEducationElements(parameters) {
                                 }
                             }
                             elementId = element.elementId
-                            elementName = json2.name.trim()
+                            elementName = json2.name.trim().toLowerCase()
                             completed = json2.completed
                             status = json2.status
                             code = json2.number
@@ -647,7 +647,7 @@ async function checkOrGetEducationElements(parameters) {
                         throw  Error('По названию ' + educationalElement.name + ' найдено больше одного элемента (а ожидалось 1)')
                     } else {
                         elementId = element.elementId
-                        elementName = json2.name.trim()
+                        elementName = json2.name.trim().toLowerCase()
                         completed = json2.completed
                         status = json2.status
                         code = json2.number
@@ -692,7 +692,7 @@ async function checkOrGetEducationElements(parameters) {
                 let json2 = await response.json()
                 if (!await checkErrors(json2, parameters)) return
                 if (!educationalElement.name || !educationalElement.code) {
-                    educationalElement.name = json2.name.trim()
+                    educationalElement.name = json2.name.trim().toLowerCase()
                     educationalElement.code = json2.number
                     let topic = await db.getFromIndex('topics', 'code', educationalElement.code)
                     if (!topic) {
@@ -714,7 +714,7 @@ async function checkOrGetEducationElements(parameters) {
                         return
                     }
                 }
-                elementName = json2.name.trim()
+                elementName = json2.name.trim().toLowerCase()
                 completed = json2.completed
                 status = json2.status
                 // code = json2.number

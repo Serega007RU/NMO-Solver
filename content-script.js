@@ -1,7 +1,7 @@
 let simulateUser = false
 let minWait = 500
 let maxWait = 2000
-let goodScore = true
+let goodScore = false
 
 let hasGoodScore = false
 let port
@@ -57,7 +57,7 @@ async function portListener(message) {
     await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"])')
 
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
-    if (simulateUser && topic.includes(' - Предварительное тестирование') || topic.includes(' - Входное тестирование')) {
+    if ((simulateUser || !goodScore) && topic.includes(' - Предварительное тестирование') || topic.includes(' - Входное тестирование')) {
         // сразу нажимаем "Завершить тестирование"
         await simulateClick(document.querySelector('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])'))
         await randomWait()
