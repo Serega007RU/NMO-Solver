@@ -8,14 +8,13 @@
 	"content_scripts": [
 		{
 			"matches": ["https://*.edu.rosminzdrav.ru/*"],
-			"js": ["libs/WorkerTimers.js", "content-script.js"]
+			"js": ["content-script.js"]
 		},
 		{
-			"matches": ["https://*.edu.rosminzdrav.ru/*"],
-			"all_frames" : true,
+			"matches": ["https://*.edu.rosminzdrav.ru/quiz-wrapper/*"],
 			"world": "MAIN",
 			"run_at": "document_start",
-			"js": ["libs/WorkerTimers.js", "visible.js"]
+			"js": ["visible.js"]
 		}
 	],
 	"description": "Автоматическое решение тестов на портале НМО",
