@@ -16,7 +16,7 @@ const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    db = await openDB('nmo', 7, {upgrade})
+    db = await openDB('nmo', 8, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -26,12 +26,13 @@ async function init() {
         if (oldVersion === 0) {
             firstInit = true
             const questions = db.createObjectStore('questions', {autoIncrement: true})
-            questions.createIndex('question', 'question')
+            questions.createIndex('question', 'question', {unique: true})
+            questions.createIndex('topics', 'topics', {multiEntry: true})
             const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
             topics.createIndex('name', 'name')
             topics.createIndex('needComplete', 'needComplete')
-            topics.createIndex('code', 'code')
-            topics.createIndex('id', 'id')
+            topics.createIndex('code', 'code', {unique: true})
+            topics.createIndex('id', 'id', {unique: true})
             db.createObjectStore('other')
             return
         }
@@ -231,6 +232,17 @@ async function init() {
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor = await cursor.continue()
             }
+        }
+
+        if (oldVersion <= 7) {
+            console.log('Этап обновления с версии 7 на 8')
+            transaction.objectStore('questions').createIndex('topics', 'topics', {multiEntry: true})
+            transaction.objectStore('questions').deleteIndex('question')
+            transaction.objectStore('questions').createIndex('question', 'question', {unique: true})
+            transaction.objectStore('topics').deleteIndex('code')
+            transaction.objectStore('topics').createIndex('code', 'code', {unique: true})
+            transaction.objectStore('topics').deleteIndex('id')
+            transaction.objectStore('topics').createIndex('id', 'id', {unique: true})
         }
 
         console.log('Обновление базы данных завершено')
@@ -459,23 +471,21 @@ async function getCorrectAnswers(topic, index) {
     if (!searchCursor) throw Error('Не найдено по заданному номеру')
     console.log('Поиск...')
     let text = result.value.name + ':\n\n'
-    let cursor = await db.transaction('questions').store.openCursor()
+    let cursor = await db.transaction('questions').store.index('topics').openCursor(result.value.key)
     while(cursor) {
         const question = cursor.value
-        if (question.topics.includes(result.value.key)) {
-            for (const answerHash of Object.keys(question.answers)) {
-                if (question.correctAnswers[answerHash]) {
-                    text += question.question + ':\n'
-                    for (const answer of question.correctAnswers[answerHash]) {
-                        text += '+ ' + answer + '\n'
-                    }
-                    for (const answer of question.answers[answerHash].answers) {
-                        if (!question.correctAnswers[answerHash].includes(answer)) {
-                            text += '- ' + answer + '\n'
-                        }
-                    }
-                    text += '\n'
+        for (const answerHash of Object.keys(question.answers)) {
+            if (question.correctAnswers[answerHash]) {
+                text += question.question + ':\n'
+                for (const answer of question.correctAnswers[answerHash]) {
+                    text += '+ ' + answer + '\n'
                 }
+                for (const answer of question.answers[answerHash].answers) {
+                    if (!question.correctAnswers[answerHash].includes(answer)) {
+                        text += '- ' + answer + '\n'
+                    }
+                }
+                text += '\n'
             }
         }
         // noinspection JSVoidFunctionReturnValueUsed
@@ -661,24 +671,13 @@ async function checkOrGetEducationElements(parameters) {
                         console.warn('Названия не соответствуют:')
                         console.warn(educationalElement.name)
                         console.warn(elementName)
-                        let topic
-                        if (educationalElement.code) {
-                            topic = await db.getFromIndex('topics', 'code', educationalElement.code)
-                        }
-                        if (!topic) {
-                            topic = await db.getFromIndex('topics', 'name', elementName)
-                        }
-                        if (topic && topic.key !== educationalElement.key) {
-                            console.warn('Найден дублирующий topic, для исправления удалён и переназначен key', JSON.stringify(educationalElement), JSON.stringify(topic))
-                            await db.delete('topics', educationalElement.key)
-                            educationalElement.key = topic.key
-                        }
                     }
                     educationalElement.id = elementId
                     educationalElement.name = elementName
                     // educationalElement.completed = completed
                     // educationalElement.status = status
                     educationalElement.code = code
+                    await fixDupTopics(educationalElement)
                     await db.put('topics', educationalElement)
                 }
             } else {
@@ -694,15 +693,7 @@ async function checkOrGetEducationElements(parameters) {
                 if (!educationalElement.name || !educationalElement.code) {
                     educationalElement.name = json2.name.trim().toLowerCase()
                     educationalElement.code = json2.number
-                    let topic = await db.getFromIndex('topics', 'code', educationalElement.code)
-                    if (!topic) {
-                        topic = await db.getFromIndex('topics', 'name', educationalElement.name)
-                    }
-                    if (topic && topic.key !== educationalElement.key) {
-                        console.warn('Найден дублирующий topic, для исправления удалён и переназначен key', JSON.stringify(educationalElement), JSON.stringify(topic))
-                        await db.delete('topics', educationalElement.key)
-                        educationalElement.key = topic.key
-                    }
+                    await fixDupTopics(educationalElement)
                     await db.put('topics', educationalElement)
                 }
                 if (json2.iomHost?.name) {
@@ -1223,6 +1214,38 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     self.port = port
 })
+
+self.fixDupTopics = fixDupTopics
+async function fixDupTopics(educationalElement) {
+    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+    if (educationalElement.name) {
+        let cursor = await transaction.objectStore('topics').index('name').openCursor(educationalElement.name)
+        while (cursor) {
+            if (educationalElement.key !== cursor.value.key) {
+                console.warn('Найден дублирующий topic, для исправления он был удалён', cursor.value)
+                let count = 0
+                let cursor2 = await transaction.objectStore('questions').index('topics').openCursor(cursor.value.key)
+                while(cursor2) {
+                    count++
+                    const question = cursor2.value
+                    question.topics.splice(question.topics.indexOf(cursor.value.key), 1)
+                    if (!question.topics.includes(educationalElement.key)) {
+                        question.topics.push(educationalElement.key)
+                    }
+                    await cursor2.update(question)
+                    // noinspection JSVoidFunctionReturnValueUsed
+                    cursor2 = await cursor2.continue()
+                }
+                if (count) {
+                    console.warn('Key topic\'а был заменён в следующих кол-во тем', count)
+                }
+                await cursor.delete()
+            }
+            // noinspection JSVoidFunctionReturnValueUsed
+            cursor = await cursor.continue()
+        }
+    }
+}
 
 // https://www.kodeclik.com/array-combinations-javascript/
 function getCombinations(items, multi) {

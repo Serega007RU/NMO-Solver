@@ -1,7 +1,7 @@
 let simulateUser = false
 let minWait = 500
 let maxWait = 2000
-let goodScore = false
+let goodScore = true
 
 let hasGoodScore = false
 let port
