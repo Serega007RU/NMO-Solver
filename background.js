@@ -856,7 +856,13 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                     let answers = []
                     if (hasRightAnswer) {
-                        for (const correctAnswers of Object.values(question.correctAnswers)) answers = answers.concat(correctAnswers)
+                        for (const correctAnswers of Object.values(question.correctAnswers)) {
+                            for (const answer of correctAnswers) {
+                                if (!answers.includes(answer)) {
+                                    answers.push(answer)
+                                }
+                            }
+                        }
                         console.log('попробуем использовать правильные ответы которые есть', question)
                     } else {
                         // предлагаем рандомный предполагаемый вариант правильного ответа
@@ -908,7 +914,13 @@ chrome.runtime.onConnect.addListener((port) => {
                                 }
                             }
                             if (hasRightAnswer) {
-                                for (const correctAnswers of Object.values(question.correctAnswers)) answers = answers.concat(correctAnswers)
+                                for (const correctAnswers of Object.values(question.correctAnswers)) {
+                                    for (const answer of correctAnswers) {
+                                        if (!answers.includes(answer)) {
+                                            answers.push(answer)
+                                        }
+                                    }
+                                }
                                 console.log('попробуем использовать правильные ответы которые есть (заново сгенерированы комбинации)', question)
                             } else {
                                 answers = combination.map(index => question.answers[answerHash].answers[index])
