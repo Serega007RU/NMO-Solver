@@ -16,7 +16,7 @@ const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    db = await openDB('nmo', 8, {upgrade})
+    db = await openDB('nmo', 9, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -30,7 +30,8 @@ async function init() {
             questions.createIndex('topics', 'topics', {multiEntry: true})
             const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
             topics.createIndex('name', 'name')
-            topics.createIndex('needComplete', 'needComplete')
+            // 0 - не выполнено, 1 - выполнено, 2 - есть ошибки
+            topics.createIndex('completed', 'completed')
             topics.createIndex('code', 'code', {unique: true})
             topics.createIndex('id', 'id', {unique: true})
             db.createObjectStore('other')
@@ -245,6 +246,12 @@ async function init() {
             transaction.objectStore('topics').createIndex('id', 'id', {unique: true})
         }
 
+        if (oldVersion <= 8) {
+            console.log('Этап обновления с версии 8 на 9')
+            transaction.objectStore('topics').deleteIndex('needComplete')
+            transaction.objectStore('topics').createIndex('completed', 'completed')
+        }
+
         console.log('Обновление базы данных завершено')
     }
 
@@ -294,9 +301,9 @@ async function reimportEducationElements() {
     const text = await response.text()
 
     const transaction = db.transaction('topics', 'readwrite').objectStore('topics')
-    let cursor = await transaction.index('needComplete').openCursor(1)
+    let cursor = await transaction.index('completed').openCursor(0)
     while (cursor) {
-        delete cursor.value.needComplete
+        delete cursor.value.completed
         await cursor.update(cursor.value)
         // noinspection JSVoidFunctionReturnValueUsed
         cursor = await cursor.continue()
@@ -332,13 +339,13 @@ async function reimportEducationElements() {
             topic = await transaction.index('name').get(object.name)
         }
         if (topic) {
-            topic.needComplete = 1
+            topic.completed = 1
             if (object.id && !topic.id) topic.id = object.id
             if (object.code && !topic.code) topic.code = object.code
             console.log('Обновлён', topic)
         } else {
             topic = object
-            topic.needComplete = 1
+            topic.completed = 1
             console.log('Добавлен', topic)
         }
         await transaction.put(topic)
@@ -566,20 +573,20 @@ async function checkOrGetEducationElements(parameters) {
     await initializeFunc
     reloaded = 0
     try {
-        let countEE = await db.countFromIndex('topics', 'needComplete', 1)
+        let countEE = await db.countFromIndex('topics', 'completed', 0)
         if (countEE && parameters.topic) {
             const topic = await db.getFromIndex('topics', 'name', parameters.topic)
             if (topic) {
                 console.log('решено', parameters.topic)
-                delete topic.needComplete
+                delete topic.completed
                 await db.put('topics', topic)
-                countEE = await db.countFromIndex('topics', 'needComplete', 1)
+                countEE = await db.countFromIndex('topics', 'completed', 0)
             } else {
                 console.warn('Название темы не найдено', parameters.topic)
             }
         }
         if (countEE) {
-            let educationalElement = await db.getFromIndex('topics', 'needComplete', 1)
+            let educationalElement = await db.getFromIndex('topics', 'completed', 0)
             if (parameters.cut) {
                 educationalElement.name = educationalElement.name.slice(0, -10)
                 console.log('ищем (урезанное название)', educationalElement)
@@ -699,7 +706,7 @@ async function checkOrGetEducationElements(parameters) {
                 if (json2.iomHost?.name) {
                     if (!json2.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
                         console.warn('Данный элемент не возможно пройти так как платформа там другая', educationalElement)
-                        delete educationalElement.needComplete
+                        delete educationalElement.completed
                         await db.put('topics', educationalElement)
                         checkOrGetEducationElements(parameters)
                         return
