@@ -16,7 +16,7 @@ const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    db = await openDB('nmo', 6, {upgrade})
+    db = await openDB('nmo', 7, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -203,6 +203,30 @@ async function init() {
                         console.warn('Данные объеденины в', question)
                         await cursor.update(question)
                     }
+                }
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
+            }
+        }
+
+        if (oldVersion <= 6) {
+            console.log('Этап обновления с версии 6 на 7')
+            let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
+            while (cursor) {
+                const question = cursor.value
+                let changed = false
+                for (const answersHash of Object.keys(question.answers)) {
+                    if (question.correctAnswers[answersHash]) {
+                        const oldCorrectAnswers = JSON.stringify(question.correctAnswers[answersHash])
+                        question.correctAnswers[answersHash].sort()
+                        if (JSON.stringify(question.correctAnswers[answersHash]) !== oldCorrectAnswers) {
+                            changed = true
+                        }
+                    }
+                }
+                if (changed) {
+                    console.warn('Была исправлена неверная сортировка правильных ответов', question)
+                    await cursor.update(question)
                 }
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor = await cursor.continue()
