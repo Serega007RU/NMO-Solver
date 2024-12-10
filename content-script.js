@@ -5,45 +5,35 @@ let goodScore = true
 
 let hasGoodScore = false
 let port
-let running = false
 let stopRunning = false
 let countSaveAnswers = 0
 let countAnsweredAnswers = 0
 let rejectWait
 
-chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
-    if (msg.text === 'change_status') {
-        if (running) {
-            stopRunning = true
-        } else {
-            running = true
-            stopRunning = false
-            start()
-        }
-        sendResponse({running})
-    } else if (msg.text === 'start') {
-        if (!running) {
-            running = true
-            stopRunning = false
-            start()
-        }
-        sendResponse({running})
-    } else if (msg.text === 'stop') {
-        stopRunning = true
-        if (rejectWait) rejectWait()
-        sendResponse({running})
-    } else if (msg.text === 'get_status') {
-        sendResponse({running})
-    } else if (msg.text === 'open_url') {
-        document.location.href = msg.url
+chrome.runtime.sendMessage({
+    status: true,
+    authData: JSON.parse(localStorage.getItem('rsmu_tokenData')),
+    cabinet: document.location.host.split('.')[0]
+}, (message) => {
+    if (message.running) {
+        stopRunning = false
+        start(message.collectAnswers)
     }
 })
 
-chrome.runtime.sendMessage({text: 'get_status', authData: JSON.parse(localStorage.getItem('rsmu_tokenData'))}, (msg) => {
-    if (msg.running) {
-        running = true
-        stopRunning = false
-        start(msg.collectAnswers)
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+    if (message.start) {
+        if (stopRunning) {
+            chrome.runtime.sendMessage({reloadPage: true})
+        } else {
+            start()
+        }
+    } else if (message.stop) {
+        stopRunning = true
+        if (rejectWait) rejectWait()
+    } else if (message.status) {
+        const hasTest = Boolean(document.querySelector('.v-tabsheet-caption-close')) || Boolean(document.querySelector('lib-quiz-page'))
+        sendResponse({hasTest})
     }
 })
 
@@ -62,7 +52,7 @@ async function portListener(message) {
         await simulateClick(document.querySelector('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])'))
         await randomWait()
         // подтверждаем завершение теста
-        document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary').click()
+        simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
         // ждём когда пропадёт эта кнопка (типа всё прогрузится)
         await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
         runTest()
@@ -78,29 +68,42 @@ async function portListener(message) {
         attemptCount++
         if (attemptCount > 30) break
         let element
-        // выбираем между radio (или checkbox) и span (ответ с текстом)
+        // выбираем между radio или checkbox (input) и span (label)
         if (Math.random() < 0.75) {
             element = checkedElement.closest('.mdc-form-field').firstElementChild
         } else {
             element = checkedElement.closest('.mdc-form-field').lastElementChild
         }
+        const answersElements = document.querySelectorAll('.question-inner-html-text:not([disabled="true"])')
+        const idOfLastAnswer = answersElements[answersElements.length - 1].closest('.mdc-form-field').querySelector('input').id
         await simulateClick(element)
         await randomWait()
+        // подобным дибильным образом мы ждём когда кривой скрипт сайта перестроит все элементы ответов
+        await watchForElement('#' + idOfLastAnswer, true)
         checkedElement = document.querySelector('input[type="checkbox"]:checked')
     }
 
     for (const answer of message.sort(() => 0.5 - Math.random())) {
-        for (const el of document.querySelectorAll('.question-inner-html-text:not([disabled="true"])')) {
+        const answersElements = document.querySelectorAll('.question-inner-html-text:not([disabled="true"])')
+        for (const el of answersElements) {
             if (replaceBadSymbols(el.textContent).toLowerCase() === answer) {
+                // если он уже выбран, то нет смысла снова его тыкать
+                if (el.closest('.mdc-form-field').querySelector('input').checked) {
+                    continue
+                }
                 let element
-                // выбираем между radio (или checkbox) и span (ответ с текстом)
+                // выбираем между radio или checkbox (input) и span (label)
                 if (Math.random() < 0.75) {
                     element = el.closest('.mdc-form-field').firstElementChild
                 } else {
                     element = el.closest('.mdc-form-field').lastElementChild
                 }
+                const idOfLastAnswer = answersElements[answersElements.length - 1].closest('.mdc-form-field').querySelector('input').id
                 await simulateClick(element)
                 await randomWait()
+                // подобным дибильным образом мы ждём когда кривой скрипт сайта перестроит все элементы ответов
+                await watchForElement('#' + idOfLastAnswer, true)
+                break
             }
         }
     }
@@ -136,7 +139,7 @@ async function nextQuestion() {
             await waitSendAnswer()
             await randomWait()
             // подтверждаем завершение теста
-            document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary').click()
+            simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
             await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
         } else {
@@ -148,13 +151,22 @@ async function nextQuestion() {
 }
 
 async function attemptToClosePopups() {
+    if (document.querySelector('.v-Notification')) {
+        simulateClick(document.querySelector('.v-Notification'))
+        document.querySelector('.v-Notification')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
+        document.querySelector('.v-Notification')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-out-fade'}))
+        await watchForElement('.v-Notification', true)
+        await randomWait()
+    }
+
     for (let x=0; x<=1; x++) {
         if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')) {
             await simulateClick(Array.from(document.querySelectorAll('.v-window-closebox:not(.v-window-closebox-disabled)')).pop())
             // await watchForElement('.v-window-closebox:not(.v-window-closebox-disabled)', true)
             await randomWait()
         }
-        if (document.querySelector('.popupContent .v-button')) {
+        // а зачем здесь "Назад" в проверке? А потому что портал может открыть тест в popup'е, ДА, ВЕСЬ тест прямо в popup'e!!!
+        if (document.querySelector('.popupContent .v-button') && !document.querySelector('.popupContent .v-button').textContent.endsWith('Назад')) {
             await simulateClick(document.querySelector('.popupContent .v-button'))
             await watchForElement('.popupContent .v-button', true)
             await randomWait()
@@ -163,12 +175,12 @@ async function attemptToClosePopups() {
 }
 
 let nextRepeat = 0
+let hasISTask = false
 async function start(collectAnswers) {
     if (stopRunning) {
         stop()
         return
     }
-    if (collectAnswers) running = true
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
@@ -177,18 +189,38 @@ async function start(collectAnswers) {
 
     countSaveAnswers = 0
     countAnsweredAnswers = 0
+    nextRepeat = 0
 
     await watchForElement('.v-app-loading', true)
 
     await wait(250)
     await randomWait()
 
-    if (document.querySelector('.v-Notification')) {
-        simulateClick(document.querySelector('.v-Notification'))
-        document.querySelector('.v-Notification')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
-        document.querySelector('.v-Notification')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-out-fade'}))
-        await watchForElement('.v-Notification', true)
-        await randomWait()
+    if (hasISTask) {
+        hasISTask = false
+        if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')?.parentElement?.textContent === 'Быстрый переход') {
+            await attemptToClosePopups()
+
+            const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()
+
+            // Нажимаем закрыть вкладку
+            await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
+            await wait(500)
+            await randomWait()
+
+            // подтверждаем закрытие вкладки
+            await attemptToClosePopups()
+            await randomWait()
+
+            // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
+            if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
+                port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается', hastTest: true})
+                start()
+            } else {
+                port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается'})
+            }
+            return
+        }
     }
 
     await attemptToClosePopups()
@@ -213,6 +245,7 @@ async function start(collectAnswers) {
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
             if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
+                port.postMessage({done: true, topic, hastTest: true})
                 start()
             } else {
                 port.postMessage({done: true, topic})
@@ -220,13 +253,13 @@ async function start(collectAnswers) {
             return
         }
     // если мы находимся на странице системы обучения
-    } else if (document.querySelector('.v-app')) {
+    }/* else if (document.querySelector('.v-app')) {
         // Если вкладок нет, значит нам нечего решать
         if (!document.querySelectorAll('.v-tabsheet-caption-close')?.length) {
             port.postMessage({done: true})
             return
         }
-    }
+    }*/
 
     let hasSuccessTest = false
     let countGood = 0
@@ -251,7 +284,7 @@ async function start(collectAnswers) {
                 await simulateClick(variant)
                 runTest()
                 return
-            } else if (testName === 'Предварительное тестирование' || testName === 'Интерактивные ситуационные задачи' || testName === 'Входное тестирование' || testName === 'Задача') {
+            } else if (testName === 'Предварительное тестирование' || testName === 'Входное тестирование') {
                 hasSuccessTest = true
             } else if (goodScore) {
                 if (variantText.includes('оценка 3')) {
@@ -281,35 +314,20 @@ async function start(collectAnswers) {
         return
     }
 
-    if (!hasSuccessTest && (testName === 'Задача' || testName === 'Интерактивная ситуационная задача')) {
-        const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()
-
-        // Нажимаем закрыть вкладку
-        await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
-        await wait(500)
-        await randomWait()
-
-        // подтверждаем закрытие вкладки
-        await attemptToClosePopups()
-        await randomWait()
-
-        // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
-        if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
-            start()
-        } else {
-            port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается'})
-        }
-        return
+    if (testName === 'Задача' || testName === 'Интерактивные ситуационные задачи' || testName === 'Интерактивная ситуационная задача') {
+        hasISTask = true
     }
 
     const buttonNewVariant = document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
-    if (!hasSuccessTest && buttonNewVariant && testName !== 'Интерактивные ситуационные задачи') {
+    if (!hasSuccessTest && buttonNewVariant && !hasISTask) {
         await wait(500)
         // если тест не запущен и нет пройденного, то получаем новый вариант
         await simulateClick(buttonNewVariant)
+        await attemptToClosePopups()
         // ждём когда появится новый тест и открываем его
         const variant = await watchForText('.c-table-clickable-cell', ' - не завершен')
         await randomWait()
+        await attemptToClosePopups()
         await simulateClick(variant)
         runTest()
         return
@@ -319,8 +337,8 @@ async function start(collectAnswers) {
     const next = document.querySelector('.v-button-blue-button.v-button-icon-align-right:not([aria-disabled="true"])')
     if (next) {
         nextRepeat++
-        if (nextRepeat > 15) {
-            stop('Слишком много попыток переключиться на следующий этап (вперёд)')
+        if (nextRepeat > 7) {
+            chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток переключиться на следующий этап (вперёд)'})
             return
         }
         await simulateClick(next)
@@ -418,8 +436,7 @@ function watchForElement(selector, reverse) {
         }
 
         let timer = setTimeout(() => {
-            port.postMessage({reloaded: true})
-            document.location.reload()
+            chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания'})
         // }, Math.floor(Math.random() * (30000 - 15000) + 15000))
         }, Math.floor(Math.random() * (60000 - 30000) + 30000))
 
@@ -459,8 +476,7 @@ function watchForText(selector, text, reverse) {
         }
 
         let timer = setTimeout(() => {
-            port.postMessage({reloaded: true})
-            document.location.reload()
+            chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания'})
         // }, Math.floor(Math.random() * (30000 - 15000) + 15000))
         }, Math.floor(Math.random() * (60000 - 30000) + 30000))
 
@@ -490,12 +506,47 @@ function watchForText(selector, text, reverse) {
     })
 }
 
-async function simulateClick(element) {
-    element.scrollIntoView({block: 'center'})
+async function simulateClick(element, count = 0) {
+    if (count > 7) {
+        port.postMessage({error: 'Не удалось найти кнопку относительно координат'})
+        throw Error('Не удалось найти кнопку относительно координат')
+    }
+    if (!count || count === 3 || count === 6) {
+        element.scrollIntoView({block: 'center'})
+    }
     const {x, y} = getRandomCoordinates(element)
     // кликаем именно на элемент который виден в DOM относительно координат
-    element = document.elementFromPoint(x, y)
-    const {x2, y2} = getRandomCoordinates(element, false)
+    const newElement = document.elementFromPoint(x, y)
+    // проверяем попали мы на тот элемент или нам что-то мешает
+    if (element !== newElement) {
+        // если не попали, то шерстим весь DOM и проверяем попали мы на родительский или дочерние элементы
+        if (element.contains(newElement)) {
+            element = newElement
+        } else {
+            let parentElement = element.parentElement
+            let found = false
+            while (parentElement) {
+                if (parentElement === newElement) {
+                    element = newElement
+                    found = true
+                    break
+                }
+                parentElement = parentElement.parentElement
+            }
+            if (!found) {
+                // TODO ну это просто к какому-ту дерьму всё идёт, иногда эти чёртовы popup'ы выскакивают тогда когда ты этого НЕ ОЖИДАЕШЬ
+                await attemptToClosePopups()
+
+                await wait(500)
+                // бывает другие элементы частично налезают на нашу кнопку, поэтому
+                // мы повторными попытками пытаемся подобрать другие координаты
+                await simulateClick(element, count + 1)
+            }
+        }
+    } else {
+        element = newElement
+    }
+    const {x2, y2} = getRandomCoordinates(element)
     element.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window, clientX: x2, clientY: y2, screenX: x2, screenY: y2}))
     if (simulateUser) await wait(Math.floor(Math.random() * (500 - 100) + 100))
     element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 1, detail: 1}))
@@ -504,24 +555,23 @@ async function simulateClick(element) {
     element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 0, detail: 1}))
 }
 
-function getRandomCoordinates(element, half = true) {
+function getRandomCoordinates(element, half) {
     // получаем координаты элемента
     const box = element.getBoundingClientRect()
-    // вычисляем самую центральную точку элемента
-    // const xCenter = (box.left + box.right) / 2
-    // const yCenter = (box.top + box.bottom) / 2
     let left = box.left
     let right = box.right
     let top = box.top
     let bottom = box.bottom
-    // думаю что это нам ни к чему
-    // if (half) {
-    //     // сужаем границы координат на половину
-    //     left = (left + xCenter) / 2
-    //     right = (xCenter + right) / 2
-    //     top = (top + yCenter) / 2
-    //     bottom = (yCenter + bottom) / 2
-    // }
+    if (half) {
+        // вычисляем самую центральную точку элемента
+        const xCenter = (box.left + box.right) / 2
+        const yCenter = (box.top + box.bottom) / 2
+        // сужаем границы координат на половину
+        left = (left + xCenter) / 2
+        right = (xCenter + right) / 2
+        top = (top + yCenter) / 2
+        bottom = (yCenter + bottom) / 2
+    }
     // генерируем рандомные координаты для клика
     const x = Math.floor(Math.random() * (right - left) + left)
     const y = Math.floor(Math.random() * (bottom - top) + top)
@@ -534,44 +584,30 @@ function highlight(element) {
     shadow.append(document.createElement('slot'))
     const div = document.createElement('div')
     const clientRect = element.getBoundingClientRect()
-    div.style = `
-    position: absolute;
-    top: ${clientRect.top}px;
-    left: ${clientRect.left}px;
-    background: rgb(190 123 9 / 70%);
-    width: ${clientRect.width}px;
-    height: ${clientRect.height}px;
-    z-index: 2147483647;
-    pointer-events: none;`
+    const clientOffset = getOffset(element)
+    div.style.position = 'absolute'
+    div.style.left = clientOffset.left + 'px'
+    div.style.top = clientOffset.top + 'px'
+    div.style.width = clientRect.width + 'px'
+    div.style.height = clientRect.height + 'px'
+    div.style.background = 'rgb(190 123 9 / 70%)'
+    div.style.zIndex = '2147483647'
+    div.style.position = 'none'
     shadow.prepend(div)
 }
+function getOffset(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+        left: rect.left + window.scrollX,
+        top: rect.top + window.scrollY
+    };
+}
 
-// function highlight(element) {
-//     const shadow = document.body.attachShadow({mode: 'closed'})
-//     shadow.append(document.createElement('slot'))
-//     const div = document.createElement('div')
-//     const clientRect = element.getBoundingClientRect()
-//     div.style.position = 'absolute'
-//     div.style.left = clientRect.left + 'px'
-//     div.style.top = clientRect.top + 'px'
-//     div.style.width = clientRect.width + 'px'
-//     div.style.height = clientRect.height + 'px'
-//     div.style.background = 'rgb(190 123 9 / 70%)'
-//     div.style.zIndex = '2147483647'
-//     div.style.position = 'none'
-//     shadow.prepend(div)
-// }
-
-function stop(error) {
-    running = false
+function stop() {
     stopRunning = false
     countSaveAnswers = 0
     countAnsweredAnswers = 0
-    if (error) {
-        port.postMessage({running, collectAnswers: null, error})
-    } else {
-        port.postMessage({running, collectAnswers: null})
-    }
+    port.postMessage({running: false, collectAnswers: null})
 }
 
 function replaceBadSymbols(text) {
@@ -619,37 +655,11 @@ const observer = new PerformanceObserver((list) => {
         if (entry.name.endsWith('/save-answer')) {
             countSaveAnswers = countSaveAnswers + 1
             // console.log('save-answer', countSaveAnswers)
+        } else if (entry.name.endsWith('/token')) {
+            chrome.runtime.sendMessage({authData: JSON.parse(localStorage.getItem('rsmu_tokenData'))})
         }
     }
 })
 observer.observe({
     entryTypes: ["resource"]
 })
-
-
-// авто открытие теста из плана
-
-// function wait(ms) {
-//     return new Promise(resolve => setTimeout(resolve, ms));
-// }
-// let count = 0
-// for (const el of test) {
-//     count = count + 1
-//     let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + el.id + '/open-link?backUrl=https%3A%2F%2Fnmfo-vo.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan', {headers: {authorization: 'Bearer token'}})
-//     let json = await response.json()
-//     window.open(json.url, '_system')
-//     await wait(500)
-//     if (count >= 20) break
-// }
-
-
-// авто включение в план
-// function wait(ms) {
-//     return new Promise(resolve => setTimeout(resolve, ms));
-// }
-// for (const el of test.elements) {
-//     if (el.educationalOrganizationName.includes('НОЧУ')) continue
-//     let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + el.elementId + '/plan?cycleId=3413b479-f56b-d3fd-724b-46eb6eedba3c', {headers: {authorization: 'Bearer token'}, "method": "PUT"})
-//     await response.text()
-//     await wait(1000)
-// }

@@ -8,8 +8,11 @@ self.objectHash = objectHash
 let db
 let runningTab
 let stopRunning = false
+let controller
 let collectAnswers = 0
 let reloaded = 0
+let started = 0
+let startFunc
 
 let firstInit = false
 const initializeFunc = init()
@@ -275,15 +278,11 @@ async function init() {
 }
 
 self.addEventListener('install', () => {
-    chrome.contextMenus.create({
-        id: 'download',
-        title: 'Скачать базу данных',
-        contexts: ['action']
-    })
+    chrome.contextMenus.create({id: 'download', title: 'Скачать базу данных', contexts: ['action']})
     chrome.contextMenus.onClicked.addListener(async (info) => {
         if (!initializeFunc.done) {
             if (firstInit) {
-                chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
+                showNotification('Подождите', 'Идёт инициализация базы данных, подождите')
                 return
             } else {
                 await initializeFunc
@@ -335,17 +334,20 @@ async function reimportEducationElements() {
         if (!topic && object.code) {
             topic = await transaction.index('code').get(object.code)
         }
-        if (!topic) {
+        if (!topic && object.name) {
             topic = await transaction.index('name').get(object.name)
         }
         if (topic) {
-            topic.completed = 1
+            topic.completed = 0
             if (object.id && !topic.id) topic.id = object.id
             if (object.code && !topic.code) topic.code = object.code
+            if (object.name && !topic.name) topic.name = object.name
             console.log('Обновлён', topic)
         } else {
             topic = object
-            topic.completed = 1
+            topic.completed = 0
+            // TODO временно
+            topic.needSearchAnswers = true
             console.log('Добавлен', topic)
         }
         await transaction.put(topic)
@@ -475,8 +477,8 @@ async function getCorrectAnswers(topic, index) {
         console.log('По заданному названию найдено несколько тем, в качестве второго аргумента данной функции укажите номер из предложенных вариантов')
         return
     }
-    if (!searchCursor) throw Error('Не найдено по заданному номеру')
-    console.log('Поиск...')
+    if (!result) throw Error('Не найдено по заданному номеру')
+    // console.log('Поиск...')
     let text = result.value.name + ':\n\n'
     let cursor = await db.transaction('questions').store.index('topics').openCursor(result.value.key)
     while(cursor) {
@@ -502,292 +504,319 @@ async function getCorrectAnswers(topic, index) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.text === 'get_status') {
+    if (message.authData) {
+        (async () => {
+            await initializeFunc
+            await db.put('other', message.authData, 'authData')
+            await db.put('other', message.cabinet, 'cabinet')
+        })()
+    }
+    if (message.status) {
         sendResponse({running: runningTab === sender.tab.id, collectAnswers: collectAnswers})
-        if (message.authData) {
-            (async () => {
-                await initializeFunc
-                await db.put('other', message.authData, 'authData')
-            })()
+    } else if (message.reloadPage) {
+        if (message.error) {
+            console.warn('Похоже на вкладке где решается тест что-то зависло, сделана перезагрузка вкладки', message.error)
+            reloaded++
+            if (reloaded >= 7) {
+                startFunc = start(runningTab, true, false, true)
+                startFunc.finally(() => startFunc.done = true)
+                showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
+            } else {
+                chrome.tabs.reload(sender.tab.id)
+            }
+        } else {
+            chrome.tabs.reload(sender.tab.id)
         }
     }
 })
 
 chrome.action.onClicked.addListener(async (tab) => {
+    chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
+    chrome.action.setBadgeText({text: ''})
     if (!initializeFunc.done) {
         if (firstInit) {
-            chrome.notifications.create('warn', {type: 'basic', message: 'Идёт инициализация базы данных, подождите', title: 'Подождите', iconUrl: 'icon.png'})
+            showNotification('Подождите', 'Идёт инициализация базы данных, подождите')
             return
         } else {
+            chrome.action.setTitle({title: 'Идёт запуск инициализация расширения, подождите...'})
+            chrome.action.setBadgeText({text: 'START'})
             await initializeFunc
         }
     }
-    chrome.tabs.sendMessage(tab.id, {text: 'get_status'}, async (msg) => {
-        const error = chrome.runtime.lastError?.message
-        if (error) {
-            if (!error.includes('Receiving end does not exist')) {
-                console.error(error)
-                chrome.action.setBadgeText({text: 'ERR'})
+    if (runningTab === tab.id || (startFunc && !startFunc.done)) {
+        started = 0
+        console.warn('Работа расширения остановлена по запросу пользователя')
+        chrome.tabs.sendMessage(tab.id, {stop: true})
+        chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
+        chrome.action.setBadgeText({text: ''})
+        stopRunning = true
+        runningTab = null
+        collectAnswers = null
+        controller.abort()
+    } else {
+        let response
+        try {
+            response = await chrome.tabs.sendMessage(tab.id, {status: true})
+        } catch (error) {
+            if (error.message.includes('Receiving end does not exist')) {
+                showNotification('Ошибка', 'Похоже на данной вкладке открыт НЕ портал НМО (или что-то не относящееся к тестам ОИМ), если это не так - попробуйте обновить страницу')
+            } else {
+                showNotification('S Непредвиденная ошибка', error.message)
             }
             return
         }
-        if (msg.running) {
-            runningTab = tab.id
-            chrome.action.setBadgeText({text: 'ON'})
-            chrome.tabs.sendMessage(tab.id, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-        } else if (runningTab) {
-            stopRunning = true
-            chrome.tabs.sendMessage(runningTab, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-        } else {
-            checkOrGetEducationElements({tabId: tab.id})
-        }
-    })
-    // chrome.tabs.sendMessage(tab.id, {text: 'change_status'}, (msg) => {
-    //     const error = chrome.runtime.lastError?.message
-    //     if (error && !error.includes('Receiving end does not exist')) {
-    //         console.error(error)
-    //         chrome.action.setBadgeText({text: 'ERR'})
-    //     }
-    //     if (msg?.running) {
-    //         runningTab = tab.id
-    //         chrome.action.setBadgeText({text: 'ON'})
-    //     } else {
-    //         if (runningTab) {
-    //             chrome.tabs.sendMessage(runningTab, {text: 'stop'})
-    //         }
-    //         runningTab = null
-    //         collectAnswers = null
-    //         stopRunning = false
-    //         chrome.action.setBadgeText({text: ''})
-    //     }
-    // })
+        startFunc = start(tab.id, response.hasTest)
+        startFunc.finally(() => startFunc.done = true)
+    }
 })
 
-let attemptsGetEducation = 0
-async function checkOrGetEducationElements(parameters) {
-    if (stopRunning) {
-        chrome.tabs.sendMessage(runningTab, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
+async function start(tabId, hasTest, done, hasError) {
+    reloaded = 0
+    if (done) {
+        started = 0
+    } else {
+        started++
+    }
+    if (started >= 30) {
+        waitUntilState(false)
+        started = 0
+        showNotification('Ошибка', 'Слишком много попыток запустить тест')
+        chrome.action.setBadgeText({text: 'ERR'})
         return
     }
-    chrome.action.setBadgeText({text: 'ON'})
-    await initializeFunc
-    reloaded = 0
-    try {
-        let countEE = await db.countFromIndex('topics', 'completed', 0)
-        if (countEE && parameters.topic) {
-            const topic = await db.getFromIndex('topics', 'name', parameters.topic)
-            if (topic) {
-                console.log('решено', parameters.topic)
-                delete topic.completed
-                await db.put('topics', topic)
-                countEE = await db.countFromIndex('topics', 'completed', 0)
-            } else {
-                console.warn('Название темы не найдено', parameters.topic)
-            }
-        }
-        if (countEE) {
-            let educationalElement = await db.getFromIndex('topics', 'completed', 0)
-            if (parameters.cut) {
-                educationalElement.name = educationalElement.name.slice(0, -10)
-                console.log('ищем (урезанное название)', educationalElement)
-            } else {
-                console.log('ищем', educationalElement)
-            }
-
-            const authData = await db.get('other', 'authData')
-            if (!authData?.access_token) {
-                throw Error('Нет данных авторизации')
-            }
-
-            let elementId, elementName, completed, status, code
-            if (!educationalElement.id) {
-                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/search', {
-                    headers: {authorization: 'Bearer ' + authData.access_token, 'content-type': 'application/json'},
-                    body: JSON.stringify({
-                        topicId: null,
-                        cycleId: null,
-                        limit: 10,
-                        programId: null,
-                        educationalOrganizationIds: [],
-                        freeTextQuery: educationalElement.name.trim(),
-                        elementType: "iom",
-                        offset: 0,
-                        startDate: null,
-                        endDate: null,
-                        iomTypeIds: [],
-                        mainSpecialityNameList: []
-                    }),
-                    method: 'POST',
-                    signal: AbortSignal.timeout(60000)
-                })
-                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
-                let json = await response.json()
-                if (!await checkErrors(json, parameters)) return
-                if (!json?.elements?.length) {
-                    if (parameters.cut) {
-                        console.log(json)
-                        throw Error('По названию ' + educationalElement.name + ' ничего не найдено')
-                    } else {
-                        parameters.cut = true
-                        checkOrGetEducationElements(parameters)
-                        return
-                    }
-                }
-                for (const element of json.elements) {
-                    response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + element.elementId + '/', {
-                        headers: {authorization: 'Bearer ' + authData.access_token},
-                        method: 'GET',
-                        signal: AbortSignal.timeout(60000)
-                    })
-                    if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
-                    let json2 = await response.json()
-                    if (!await checkErrors(json2, parameters)) return
-                    if (educationalElement.code) {
-                        if (educationalElement.code === json2.number) {
-                            if (json2.iomHost?.name) {
-                                if (!json2.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
-                                    console.warn('Данный элемент не возможно пройти так как платформа там другая', educationalElement)
-                                    await db.delete('educational-elements', cursor.key)
-                                    checkOrGetEducationElements(parameters)
-                                    return
-                                }
-                            }
-                            elementId = element.elementId
-                            elementName = json2.name.trim().toLowerCase()
-                            completed = json2.completed
-                            status = json2.status
-                            code = json2.number
-                            break
-                        }
-                    } else if (json.elements.length > 1) {
-                        console.log(json2.elements)
-                        throw  Error('По названию ' + educationalElement.name + ' найдено больше одного элемента (а ожидалось 1)')
-                    } else {
-                        elementId = element.elementId
-                        elementName = json2.name.trim().toLowerCase()
-                        completed = json2.completed
-                        status = json2.status
-                        code = json2.number
-                    }
-                }
-                if (!elementId) {
-                    console.log(json.elements)
-                    throw Error('По названию ' + educationalElement.name + ' ничего не найдено, но есть результаты')
-                } else {
-                    if (educationalElement.name !== elementName) {
-                        console.warn('Названия не соответствуют:')
-                        console.warn(educationalElement.name)
-                        console.warn(elementName)
-                    }
-                    educationalElement.id = elementId
-                    educationalElement.name = elementName
-                    // educationalElement.completed = completed
-                    // educationalElement.status = status
-                    educationalElement.code = code
-                    await fixDupTopics(educationalElement)
-                    await db.put('topics', educationalElement)
-                }
-            } else {
-                elementId = educationalElement.id
-                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/', {
-                    headers: {authorization: 'Bearer ' + authData.access_token},
-                    method: 'GET',
-                    signal: AbortSignal.timeout(60000)
-                })
-                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
-                let json2 = await response.json()
-                if (!await checkErrors(json2, parameters)) return
-                if (!educationalElement.name || !educationalElement.code) {
-                    educationalElement.name = json2.name.trim().toLowerCase()
-                    educationalElement.code = json2.number
-                    await fixDupTopics(educationalElement)
-                    await db.put('topics', educationalElement)
-                }
-                if (json2.iomHost?.name) {
-                    if (!json2.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
-                        console.warn('Данный элемент не возможно пройти так как платформа там другая', educationalElement)
-                        delete educationalElement.completed
-                        await db.put('topics', educationalElement)
-                        checkOrGetEducationElements(parameters)
-                        return
-                    }
-                }
-                elementName = json2.name.trim().toLowerCase()
-                completed = json2.completed
-                status = json2.status
-                // code = json2.number
-            }
-
-            if (!completed && status !== 'included') {
-                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/plan', {
-                    headers: {authorization: 'Bearer ' + authData.access_token},
-                    method: 'PUT',
-                    signal: AbortSignal.timeout(60000)
-                })
-                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
-                await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
-            } else {
-                if (completed) console.warn('данный элемент уже пройден пользователем ' + elementName)
-            }
-
-            let count = 0
-            let json
-            while (count <= 5) {
-                count = count + 1
-                let response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/educational-elements/iom/' + elementId + '/open-link?backUrl=https%3A%2F%2Fnmfo-vo.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan', {
-                    headers: {authorization: 'Bearer ' + authData.access_token},
-                    method: 'GET',
-                    signal: AbortSignal.timeout(60000)
-                })
-                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
-                json = await response.json()
-                if (!await checkErrors(json, parameters)) return
-                if (json.url) break
-                await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
-            }
-            console.log('открываем', educationalElement.name)
-            if (!json.url) {
-                console.log(json)
-                console.log(educationalElement)
-                throw Error('Не была получена ссылка по теме ' + educationalElement.name)
-            }
-            runningTab = parameters.tabId
-            chrome.action.setBadgeText({text: 'ON'})
-            chrome.tabs.sendMessage(parameters.tabId, {text: 'open_url', url: json.url})
-            attemptsGetEducation = 0
-        } else if (parameters.done) {
-            chrome.tabs.sendMessage(parameters.tabId, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-            console.log('Расширение окончил работу')
-            chrome.notifications.create('done', {type: 'basic', message: 'Расширение окончил работу', title: 'Готово', iconUrl: 'icon.png'})
-        } else {
-            chrome.tabs.sendMessage(parameters.tabId, {text: 'start'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-        }
-    } catch (error) {
-        if ((error.message === 'signal timed out' || error.message.includes('bad code 5')) && attemptsGetEducation <= 15) {
-            attemptsGetEducation++
-            await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
-            checkOrGetEducationElements(parameters)
-            return
-        }
-        chrome.tabs.sendMessage(parameters.tabId, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-        console.error(error)
-        chrome.notifications.create('error', {type: 'basic', message: error.message, title: 'Ошибка', iconUrl: 'icon.png'})
-        if (!runningTab) {
-            chrome.action.setBadgeText({text: ''})
-        }
+    waitUntilState(true)
+    controller = new AbortController()
+    stopRunning = false
+    let url = await checkOrGetTopic()
+    if (url === 'error') {
+        waitUntilState(false)
+        started = 0
+        if (stopRunning) return
+        chrome.action.setBadgeText({text: 'ERR'})
+        return
     }
+    if (url === 'null') {
+        if (done) {
+            waitUntilState(false)
+            started = 0
+            showNotification('Готово', 'Расширение окончил работу')
+            chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
+            chrome.action.setBadgeText({text: 'DONE'})
+            runningTab = null
+            collectAnswers = null
+            return
+        } else if (!hasTest) {
+            waitUntilState(false)
+            started = 0
+            chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
+            showNotification('Ошибка', 'На данной странице нет теста или не назначены тесты в настройках')
+            chrome.action.setBadgeText({text: 'ERR'})
+            return
+        } else if (hasError) {
+            chrome.tabs.reload(tabId)
+        } else {
+            chrome.tabs.sendMessage(tabId, {start: true})
+        }
+    } else {
+        await chrome.tabs.update(tabId, {url})
+    }
+    chrome.action.setTitle({title: 'Расширение решает тест'})
+    chrome.action.setBadgeText({text: 'ON'})
+    runningTab = tabId
 }
 
-async function checkErrors(json, parameters) {
+async function checkOrGetTopic() {
+    const countEE = await db.countFromIndex('topics', 'completed', 0)
+    if (countEE) {
+        chrome.action.setTitle({title: 'Выполняется поиск темы'})
+        chrome.action.setBadgeText({text: 'SEARCH'})
+        if (!(await db.get('other', 'authData'))?.access_token) {
+            showNotification('Ошибка', 'Нет данных об авторизации')
+            return 'error'
+        }
+        let url
+        let count = 0
+        while (true) {
+            count++
+            if (count >= 100) {
+                showNotification('Ошибка', 'Слишком много попыток поиска темы')
+                return 'error'
+            }
+            const educationalElement = await db.getFromIndex('topics', 'completed', 0)
+            if (!educationalElement) return 'null'
+            try {
+                url = await searchEducationalElement(educationalElement)
+                break
+            } catch (error) {
+                if (stopRunning) return 'error'
+                console.warn(error)
+                if (error.message.startsWith('Topic error, ')) {
+                    educationalElement.error = error.message.replace('Topic error, ', '')
+                    educationalElement.completed = 2
+                    await db.put('topics', educationalElement)
+                } else if (!error.message.startsWith('bad code 5') && !error.message.startsWith('Не была получена ссылка по теме ') && error.message !== 'Updated token') {
+                    showNotification('W Непредвиденная ошибка', error.message)
+                    return 'error'
+                }
+                await wait(Math.floor(Math.random() * (30000 - 5000) + 5000))
+            }
+        }
+        return url
+    }
+    return 'null'
+}
+
+async function searchEducationalElement(educationalElement, cut, updatedToken) {
+    if (cut) {
+        educationalElement.name = educationalElement.name.slice(0, -10)
+        console.log('ищем (урезанное название)', educationalElement)
+    } else {
+        console.log('ищем', educationalElement)
+    }
+
+    const authData = await db.get('other', 'authData')
+    const cabinet = await db.get('other', 'cabinet')
+
+    let foundEE
+    if (educationalElement.id) {
+        let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${educationalElement.id}/`, {
+            headers: {authorization: 'Bearer ' + authData.access_token},
+            method: 'GET',
+            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+        })
+        if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
+        let json = await response.json()
+        await checkErrors(json, updatedToken)
+        foundEE = json
+    } else {
+        let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/search`, {
+            headers: {authorization: 'Bearer ' + authData.access_token, 'content-type': 'application/json'},
+            body: JSON.stringify({
+                topicId: null,
+                cycleId: null,
+                limit: 10,
+                programId: null,
+                educationalOrganizationIds: [],
+                freeTextQuery: educationalElement.name.trim(),
+                elementType: "iom",
+                offset: 0,
+                startDate: null,
+                endDate: null,
+                iomTypeIds: [],
+                mainSpecialityNameList: []
+            }),
+            method: 'POST',
+            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+        })
+        if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
+        let json = await response.json()
+        await checkErrors(json, updatedToken)
+        if (!json?.elements?.length) {
+            if (cut) {
+                console.log(json)
+                throw Error('По названию ' + educationalElement.name + ' ничего не найдено')
+            } else {
+                cut = true
+                searchEducationalElement(educationalElement, cut, updatedToken)
+                return
+            }
+        }
+        for (const element of json.elements) {
+            await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+            response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${element.elementId}/`, {
+                headers: {authorization: 'Bearer ' + authData.access_token},
+                method: 'GET',
+                signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+            })
+            if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
+            let json2 = await response.json()
+            await checkErrors(json2, updatedToken)
+            if (educationalElement.code) {
+                if (educationalElement.code === json2.number) {
+                    foundEE = json2
+                    break
+                }
+            } else if (educationalElement.name === json2.name.trim().toLowerCase()) {
+                foundEE = json2
+                break
+            } else if (cut && json2.name.trim().toLowerCase().includes(educationalElement.name)) {
+                foundEE = json2
+                break
+            }
+        }
+    }
+
+    if (!foundEE) {
+        throw Error('Topic error, Не найдено')
+    }
+
+    await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+
+    foundEE.name = foundEE.name.trim().toLowerCase()
+
+    if (educationalElement.name && educationalElement.name !== foundEE.name) {
+        console.warn('Названия не соответствуют:')
+        console.warn(educationalElement.name)
+        console.warn(foundEE.name)
+        educationalElement.error = 'Есть не соответствие в названии, название было изменено'
+    }
+    educationalElement.id = foundEE.id
+    educationalElement.name = foundEE.name
+    // educationalElement.completed = completed
+    // educationalElement.status = status
+    educationalElement.code = foundEE.number
+    await fixDupTopics(educationalElement)
+    await db.put('topics', educationalElement)
+
+    if (foundEE.iomHost?.name) {
+        if (!foundEE.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
+            throw Error('Topic error, Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+        }
+    }
+
+    if (!foundEE.completed && foundEE.status !== 'included') {
+        let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id}/plan`, {
+            headers: {authorization: 'Bearer ' + authData.access_token},
+            method: 'PUT',
+            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+        })
+        if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
+        await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+    } else {
+        if (foundEE.completed) console.warn('данный элемент уже пройден пользователем', foundEE)
+    }
+
+    let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id }/open-link?backUrl=https%3A%2F%2F${cabinet}.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan`, {
+        headers: {authorization: 'Bearer ' + authData.access_token},
+        method: 'GET',
+        signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+    })
+    if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
+    let json = await response.json()
+    await checkErrors(json, updatedToken)
+    console.log('открываем', educationalElement.name)
+    if (!json.url) {
+        console.log(json)
+        console.log(educationalElement)
+        throw Error('Не была получена ссылка по теме ' + educationalElement.name)
+    }
+    if (!new URL(json.url).host.includes('edu.rosminzdrav.ru')) {
+        throw Error('Topic error, Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+    }
+    return json.url
+}
+
+async function checkErrors(json, updatedToken) {
     if (json.error) {
-        if ((json.error_description?.includes('token expired') || json.error_description?.includes('access token')) && !parameters.updatedToken) {
+        if ((json.error_description?.includes('token expired') || json.error_description?.includes('access token')) && !updatedToken) {
             const authData = await db.get('other', 'authData')
             if (authData?.refresh_token) {
-                const response = await fetch('https://nmfo-vo.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=' + authData.refresh_token, {
+                const response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=${authData.refresh_token}`, {
                     headers: {"Content-Type": "application/x-www-form-urlencoded", Authorization: 'Basic ' + btoa(`client:secret`)},
                     method: 'POST',
-                    signal: AbortSignal.timeout(60000)
+                    signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
                 })
+                if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 const json2 = await response.json()
                 console.log(json2)
                 if (json2?.access_token) {
@@ -796,37 +825,46 @@ async function checkErrors(json, parameters) {
                     console.error('Не удалось обновить access_token')
                     throw Error('Не удалось обновить access_token ' + JSON.stringify(json2).slice(0, 150))
                 }
-                parameters.updatedToken = true
-                checkOrGetEducationElements(parameters)
-                return false
+                throw Error('Updated token')
             }
         }
-        console.log(json)
+        console.error(json)
         throw Error('НМО выдал ошибку при попытке поиска ' + JSON.stringify(json).slice(0, 150))
     }
-    return true
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     if (runningTab === tabId) {
+        console.warn('Работа расширения остановлена, пользователь закрыл вкладку')
         runningTab = null
         collectAnswers = null
-        stopRunning = false
+        stopRunning = true
+        controller.abort()
+        chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
         chrome.action.setBadgeText({text: ''})
     }
 })
 
-let pingPongTimer
 chrome.runtime.onConnect.addListener((port) => {
     runningTab = port.sender.tab.id
     port.onMessage.addListener(async (message) => {
         await initializeFunc
         if (message.question) {
-            let topicKey = await db.getKeyFromIndex('topics', 'name', message.question.topics[0])
-            if (!topicKey) {
+            let topicKey
+            const topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
+            if (topic) {
+                topicKey = topic.key
+                if (topic.needSearchAnswers) {
+                    // TODO временно
+                    // await searchOn24forcare(message.question.topics[0], topic.key)
+                    delete topic.needSearchAnswers
+                    await db.put('topics', topic)
+                }
+            } else {
                 topicKey = await db.put('topics', {name: message.question.topics[0]})
                 console.log('Внесена новая тема в базу', message.question.topics[0])
-                await searchOn24forcare(message.question.topics[0], topicKey)
+                // TODO временно
+                // await searchOn24forcare(message.question.topics[0], topicKey)
             }
             const key = await db.getKeyFromIndex('questions', 'question', message.question.question)
             // работа с найденным вопросом
@@ -949,6 +987,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.answers = {[answerHash]: question.answers}
                 question.lastOrder = {[question.lastOrder]: answerHash}
                 question.correctAnswers = {}
+                question.topics = [topicKey]
                 console.log('добавлен новый вопрос', question)
                 // await searchOnAI(question, answerHash)
                 // if (question.correctAnswers[answerHash]) {
@@ -1163,62 +1202,48 @@ chrome.runtime.onConnect.addListener((port) => {
             if (message.running || message.collectAnswers) {
                 if (message.collectAnswers) collectAnswers = message.collectAnswers
                 runningTab = port.sender.tab.id
-                chrome.action.setBadgeText({text: 'ON'})
-            } else {
-                if (message.error) {
-                    console.error(message.error)
-                    chrome.notifications.create('done', {type: 'basic', message: message.error, title: 'Ошибка', iconUrl: 'icon.png'})
-                }
-                runningTab = null
-                collectAnswers = null
-                stopRunning = false
-                chrome.action.setBadgeText({text: ''})
+                // chrome.action.setBadgeText({text: 'ON'})
             }
         } else if (message.done) {
-            // chrome.notifications.create('done', {type: 'basic', message: 'Расширение окончил работу', title: 'Готово', iconUrl: 'icon.png'})
-            if (message.error) {
-                console.warn('По теме ' + message.topic + ' есть ошибка: ' + message.error)
+            const educationalElement = await db.getFromIndex('topics', 'name', message.topic)
+            console.log('закончено', message.topic)
+            if (educationalElement) {
+                if (message.error) {
+                    showNotification('Предупреждение', message.error)
+                    educationalElement.completed = 2
+                    educationalElement.error = message.error
+                } else {
+                    // TODO временно
+                    // educationalElement.completed = 1
+                    delete educationalElement.completed
+                }
+                await db.put('topics', educationalElement)
             }
-            checkOrGetEducationElements({tabId: runningTab, topic: message.topic, done: true})
-            // setTimeout(() => {
-            // chrome.notifications.clear('done')
-            // }, 9000)
-        } else if (message.reloaded) {
-            reloaded++
-            if (reloaded >= 50) {
-                chrome.tabs.sendMessage(runningTab, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-                console.error('Слишком много попыток перезагрузить страницу')
-                chrome.notifications.create('done', {
-                    type: 'basic',
-                    message: 'Слишком много попыток перезагрузить страницу',
-                    title: 'Ошибка',
-                    iconUrl: 'icon.png'
-                })
+            if (!message.hasTest) {
+                startFunc = start(runningTab, false, true)
+                startFunc.finally(() => startFunc.done = true)
             }
-        } else if (message.pong) {
-            // none
+        } else if (message.error) {
+            showNotification('Предупреждение', message.error)
+            startFunc = start(runningTab, true, false, true)
+            startFunc.finally(() => startFunc.done = true)
         } else {
             console.warn(message)
         }
     })
-    if (stopRunning) {
-        chrome.tabs.sendMessage(runningTab, {text: 'stop'}, (msg) => chrome.action.setBadgeText({text: msg.running ? 'ON' : ''}))
-        return
-    } else {
-        pingPongTimer = setInterval(() => {
-            port.postMessage({ping: true})
-        }, 5000)
-        port.onDisconnect.addListener(() => {
-            const error = chrome.runtime.lastError?.message
-            if (error) {
-                // просто игнорируем это безобразие (хз как это фиксить)
-                if (error !== 'The page keeping the extension port is moved into back/forward cache, so the message channel is closed.') {
-                    console.error(error)
-                }
+
+    waitUntilState(true)
+
+    port.onDisconnect.addListener(() => {
+        const error = chrome.runtime.lastError?.message
+        if (error) {
+            // просто игнорируем это безобразие (хз как это фиксить)
+            if (error !== 'The page keeping the extension port is moved into back/forward cache, so the message channel is closed.') {
+                console.error(error)
             }
-            clearInterval(pingPongTimer)
-        })
-    }
+        }
+    })
+
     self.port = port
 })
 
@@ -1304,6 +1329,7 @@ async function searchOnAI(question, answerHash) {
                 ]
             }),
             method: 'POST',
+            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
         })
         let json = await response.json()
         console.log('Ответ от ИИ получен\n', json.choices[0].message.content)
@@ -1325,32 +1351,34 @@ async function searchOnAI(question, answerHash) {
 
 self.searchOn24forcare = searchOn24forcare
 async function searchOn24forcare(topic, topicKey) {
+    chrome.action.setTitle({title: 'Выполняется поиск ответов в интернете'})
+    chrome.action.setBadgeText({text: 'SEARCH'})
     // const origNameTopic = topic
     try {
         console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + '...')
         // c " на сайте плохо ищется
         topic = topic.replaceAll(/["«»]/gi, '')
-        let response = await fetch('https://24forcare.com/search/?query=' + topic)
+        let response = await fetch('https://24forcare.com/search/?query=' + topic, {signal: controller.signal})
         let text = await response.text()
         let doc = new JSDOM(text).window.document
         let shot = true
         if (!doc.querySelector('.item-name') && topic.match(/\s?-?\s?\d{4}$/gi)) {
             shot = false
             topic = topic.replaceAll(/\s?-?\s?\d{4}$/gi, '')
-            response = await fetch('https://24forcare.com/search/?query=' + topic)
+            response = await fetch('https://24forcare.com/search/?query=' + topic, {signal: controller.signal})
             text = await response.text()
             doc = new JSDOM(text).window.document
         }
         if (!doc.querySelector('.item-name') && topic.includes('клиническим рекомендациям') && topic.lastIndexOf('(') !== -1) {
             shot = false
             topic = topic.slice(0, topic.lastIndexOf('(')).trim()
-            response = await fetch('https://24forcare.com/search/?query=' + topic)
+            response = await fetch('https://24forcare.com/search/?query=' + topic, {signal: controller.signal})
             text = await response.text()
             doc = new JSDOM(text).window.document
         }
         if (!doc.querySelector('.item-name')) {
             shot = true
-            response = await fetch('https://24forcare.com/search/?query=' + topic.substring(0, topic.length / 2))
+            response = await fetch('https://24forcare.com/search/?query=' + topic.substring(0, topic.length / 2), {signal: controller.signal})
             text = await response.text()
             doc = new JSDOM(text).window.document
         }
@@ -1360,7 +1388,7 @@ async function searchOn24forcare(topic, topicKey) {
         }
         const searchTopics = doc.querySelector('.shot') && shot ? doc.querySelectorAll('.shot') : doc.querySelectorAll('.item-name')
         for (const found of searchTopics) {
-            const response2 = await fetch(found.href)
+            const response2 = await fetch(found.href, {signal: controller.signal})
             const text2 = await response2.text()
             const doc2 = new JSDOM(text2).window.document
             let topicText = changeLetters(doc2.querySelector('h1').textContent.trim())
@@ -1433,6 +1461,10 @@ async function searchOn24forcare(topic, topicKey) {
         console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + ' окончен')
     } catch (error) {
         console.error('Ошибка поиска ответов на сайте 24forcare.com', error)
+    } finally {
+        if (stopRunning) return
+        chrome.action.setTitle({title: 'Расширение решает тест'})
+        chrome.action.setBadgeText({text: 'ON'})
     }
 }
 
@@ -1458,6 +1490,12 @@ function changeLetters(str) {
     return str;
 }
 
+function showNotification(title, message) {
+    console.log(title, message)
+    chrome.action.setTitle({title: message})
+    chrome.notifications.create({type: 'basic', message, title, iconUrl: 'icon.png'})
+}
+
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1469,5 +1507,16 @@ async function waitUntil(promise) {
         await promise
     } finally {
         clearInterval(keepAlive)
+    }
+}
+let timerKeepAlive
+function waitUntilState(state) {
+    if (state) {
+        if (!timerKeepAlive) {
+            timerKeepAlive = setInterval(chrome.runtime.getPlatformInfo, 25 * 1000)
+        }
+    } else {
+        clearInterval(timerKeepAlive)
+        timerKeepAlive = null
     }
 }
