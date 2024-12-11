@@ -9,15 +9,21 @@ let stopRunning = false
 let countSaveAnswers = 0
 let countAnsweredAnswers = 0
 let rejectWait
+let shadowRoot
+
+let settings
 
 chrome.runtime.sendMessage({
     status: true,
     authData: JSON.parse(localStorage.getItem('rsmu_tokenData')),
-    cabinet: document.location.host.split('.')[0]
+    cabinet: document.location.host.split('.')[0].split('-')[1]
 }, (message) => {
     if (message.running) {
         stopRunning = false
         start(message.collectAnswers)
+    }
+    if (message.settings) {
+        settings = message.settings
     }
 })
 
@@ -214,7 +220,7 @@ async function start(collectAnswers) {
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
             if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
-                port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается', hastTest: true})
+                port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается', hasTest: true})
                 start()
             } else {
                 port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается'})
@@ -245,7 +251,7 @@ async function start(collectAnswers) {
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
             if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
-                port.postMessage({done: true, topic, hastTest: true})
+                port.postMessage({done: true, topic, hasTest: true})
                 start()
             } else {
                 port.postMessage({done: true, topic})
@@ -656,7 +662,7 @@ const observer = new PerformanceObserver((list) => {
             countSaveAnswers = countSaveAnswers + 1
             // console.log('save-answer', countSaveAnswers)
         } else if (entry.name.endsWith('/token')) {
-            chrome.runtime.sendMessage({authData: JSON.parse(localStorage.getItem('rsmu_tokenData'))})
+            chrome.runtime.sendMessage({authData: JSON.parse(localStorage.getItem('rsmu_tokenData')), cabinet: document.location.host.split('.')[0].split('-')[1]})
         }
     }
 })

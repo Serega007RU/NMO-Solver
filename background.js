@@ -37,7 +37,8 @@ async function init() {
             topics.createIndex('completed', 'completed')
             topics.createIndex('code', 'code', {unique: true})
             topics.createIndex('id', 'id', {unique: true})
-            db.createObjectStore('other')
+            const other = db.createObjectStore('other')
+            await other.put({mode: 'manual'}, 'settings')
             return
         }
 
@@ -512,7 +513,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })()
     }
     if (message.status) {
-        sendResponse({running: runningTab === sender.tab.id, collectAnswers: collectAnswers})
+        if (firstInit) {
+            sendResponse({running: false, initializing: true})
+        } else {
+            (async () => {
+                await initializeFunc
+                const settings = await db.get('other', 'settings')
+                sendResponse({running: runningTab === sender.tab.id, collectAnswers, settings})
+            })()
+            return true
+        }
     } else if (message.reloadPage) {
         if (message.error) {
             console.warn('Похоже на вкладке где решается тест что-то зависло, сделана перезагрузка вкладки', message.error)
@@ -654,7 +664,13 @@ async function checkOrGetTopic() {
                     educationalElement.error = error.message.replace('Topic error, ', '')
                     educationalElement.completed = 2
                     await db.put('topics', educationalElement)
-                } else if (!error.message.startsWith('bad code 5') && !error.message.startsWith('Не была получена ссылка по теме ') && error.message !== 'Updated token') {
+                } else if (
+                    !error.message.startsWith('bad code 5') &&
+                    !error.message.startsWith('Не была получена ссылка по теме ') &&
+                    error.message !== 'Updated token' &&
+                    error.message !== 'signal timed out' &&
+                    error.message !== 'Failed to fetch'
+                ) {
                     showNotification('W Непредвиденная ошибка', error.message)
                     return 'error'
                 }
@@ -675,7 +691,9 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     }
 
     const authData = await db.get('other', 'authData')
-    const cabinet = await db.get('other', 'cabinet')
+    let cabinet = await db.get('other', 'cabinet')
+    if (!cabinet) cabinet = 'vo'
+    cabinet = 'nmfo-' + cabinet
 
     let foundEE
     if (educationalElement.id) {
@@ -846,7 +864,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 })
 
 chrome.runtime.onConnect.addListener((port) => {
-    runningTab = port.sender.tab.id
+    // runningTab = port.sender.tab.id
     port.onMessage.addListener(async (message) => {
         await initializeFunc
         if (message.question) {
