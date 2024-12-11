@@ -1,6 +1,7 @@
 import { openDB } from '/libs/idb.js';
 import { default as objectHash } from '/libs/object-hash.js';
 import { JSDOM } from '/libs/jsdom.js';
+import '/utils.js'
 
 self.JSDOM = JSDOM // TODO для меньшей нагрузки следует эту реализацию заменить на API chrome.offscreen (ну и говно-код же получится с его использованием)
 self.objectHash = objectHash
@@ -13,13 +14,14 @@ let collectAnswers = 0
 let reloaded = 0
 let started = 0
 let startFunc
+let settings
 
 let firstInit = false
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    db = await openDB('nmo', 9, {upgrade})
+    db = await openDB('nmo', 12, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -42,8 +44,8 @@ async function init() {
             return
         }
 
-        if (oldVersion <= 1) {
-            console.log('Этап обновления с версии 1 на 2')
+        if (oldVersion <= 8) {
+            console.log('Этап обновления с версии 8 на 9')
             let cursor = await transaction.objectStore('questions').openCursor()
             while (cursor) {
                 const question = cursor.value
@@ -65,69 +67,68 @@ async function init() {
             }
         }
 
-        if (oldVersion <= 2) {
-            console.log('Этап обновления с версии 2 на 3')
-            db.deleteObjectStore('topics')
-            const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
-            topics.createIndex('name', 'name')
-            topics.createIndex('needComplete', 'needComplete')
-            topics.createIndex('code', 'code')
+        if (oldVersion <= 9) {
+            console.log('Этап обновления с версии 9 на 10')
 
             let cursor = await transaction.objectStore('questions').openCursor()
             while (cursor) {
                 const question = cursor.value
                 if (question.topics.length) {
+                    let changed = false
                     for (const [index, topic] of question.topics.entries()) {
-                        let key = await transaction.objectStore('topics').index('name').getKey(topic)
-                        if (key == null) {
-                            key = await transaction.objectStore('topics').put({name: topic})
+                        if (typeof topic === 'string') {
+                            console.warn('Исправлена ошибка с topic', question)
+                            changed = true
+                            let key = await transaction.objectStore('topics').index('name').getKey(topic)
+                            if (key == null) {
+                                key = await transaction.objectStore('topics').put({name: topic})
+                            }
+                            question.topics[index] = key
                         }
-                        question.topics[index] = key
                     }
-                    await cursor.update(question)
+                    if (changed) {
+                        await cursor.update(question)
+                    }
                 }
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor = await cursor.continue()
             }
         }
 
-        if (oldVersion <= 3) {
-            console.log('Этап обновления с версии 3 на 4')
-            db.deleteObjectStore('educational-elements')
-            transaction.objectStore('topics').createIndex('id', 'id')
-        }
-
-        if (oldVersion <= 4) {
-            console.log('Этап обновления с версии 4 на 5')
+        if (oldVersion <= 10) {
+            console.log('Этап обновления с версии 10 на 11')
             let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
             while (cursor) {
                 const question = cursor.value
 
-                question.question = question.question.toLowerCase()
+                question.question = normalizeText(question.question)
 
                 for (const answerHash of Object.keys(question.answers)) {
                     const newAnswers = []
                     for (const answer of question.answers[answerHash].answers) {
-                        newAnswers.push(answer.toLowerCase())
+                        newAnswers.push(normalizeText(answer))
                     }
                     newAnswers.sort()
                     const newAnswer = question.answers[answerHash]
                     const newAnswerHash = objectHash(newAnswers)
 
+                    const oldQuestion = JSON.stringify(question)
                     delete question.answers[answerHash]
                     // TODO мы удаляем комбинации так как меняется сортировка вопросов из-за разного регистра букв
                     delete newAnswer.combinations
-                    newAnswer.answers = newAnswers
                     if (question.answers[newAnswerHash]) {
-                        console.warn('Найдены дублирующиеся ответы', JSON.stringify(question), question)
+                        console.warn('Найдены дублирующиеся ответы', oldQuestion, question)
                     }
+
+                    newAnswer.answers = newAnswers
                     question.answers[newAnswerHash] = newAnswer
 
                     if (question.correctAnswers[answerHash]) {
                         const newCorrectAnswers = []
                         for (const answer of question.correctAnswers[answerHash]) {
-                            newCorrectAnswers.push(answer.toLowerCase())
+                            newCorrectAnswers.push(normalizeText(answer))
                         }
+                        newCorrectAnswers.sort()
                         delete question.correctAnswers[answerHash]
                         question.correctAnswers[newAnswerHash] = newCorrectAnswers
                     }
@@ -142,20 +143,20 @@ async function init() {
             let cursor2 = await transaction.objectStore('topics', 'readwrite').openCursor()
             while (cursor2) {
                 const topic = cursor2.value
-                topic.name = topic.name.toLowerCase()
+                topic.name = normalizeText(topic.name)
                 await cursor2.update(topic)
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor2 = await cursor2.continue()
             }
         }
 
-        if (oldVersion <= 5) {
-            console.log('Этап обновления с версии 5 на 6')
+        if (oldVersion <= 11) {
+            console.log('Этап обновления с версии 11 на 12')
             let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
             while (cursor) {
                 const count = await transaction.objectStore('questions').index('question').count(cursor.value.question)
                 if (count > 1) {
-                    console.warn('Найден дубликат', cursor.value)
+                    // console.warn('Найден дубликат', cursor.value)
                     let cursor2 = await transaction.objectStore('questions', 'readwrite').index('question').openCursor(cursor.value.question)
                     const question = cursor2.value
                     // noinspection JSVoidFunctionReturnValueUsed
@@ -199,65 +200,57 @@ async function init() {
                             }
                         }
 
-                        console.warn('Удалено', cursor2.value)
+                        // console.warn('Удалено', cursor2.value)
                         await cursor2.delete()
 
                         // noinspection JSVoidFunctionReturnValueUsed
                         cursor2 = await cursor2.continue()
                     }
                     if (changed) {
-                        console.warn('Данные объеденины в', question)
+                        console.warn('Дубликат объединён в', question)
                         await cursor.update(question)
                     }
                 }
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor = await cursor.continue()
             }
-        }
 
-        if (oldVersion <= 6) {
-            console.log('Этап обновления с версии 6 на 7')
-            let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
-            while (cursor) {
-                const question = cursor.value
-                let changed = false
-                for (const answersHash of Object.keys(question.answers)) {
-                    if (question.correctAnswers[answersHash]) {
-                        const oldCorrectAnswers = JSON.stringify(question.correctAnswers[answersHash])
-                        question.correctAnswers[answersHash].sort()
-                        if (JSON.stringify(question.correctAnswers[answersHash]) !== oldCorrectAnswers) {
-                            changed = true
+            let cursor2 = await transaction.objectStore('topics', 'readwrite').openCursor()
+            while (cursor2) {
+                let cursor3 = await transaction.objectStore('topics').index('name').openCursor(cursor2.value.name)
+                while (cursor3) {
+                    if (cursor2.value.key !== cursor3.value.key) {
+                        console.warn('Найден дублирующий topic, для исправления он был удалён', cursor3.value)
+                        let count = 0
+                        let cursor4 = await transaction.objectStore('questions').index('topics').openCursor(cursor3.value.key)
+                        while(cursor4) {
+                            count++
+                            const question = cursor4.value
+                            question.topics.splice(question.topics.indexOf(cursor3.value.key), 1)
+                            if (!question.topics.includes(cursor2.value.key)) {
+                                question.topics.push(cursor2.value.key)
+                            }
+                            await cursor4.update(question)
+                            // noinspection JSVoidFunctionReturnValueUsed
+                            cursor4 = await cursor4.continue()
                         }
+                        if (count) {
+                            console.warn('Key topic\'а был заменён в следующих кол-во тем', count)
+                        }
+                        await cursor3.delete()
                     }
-                }
-                if (changed) {
-                    console.warn('Была исправлена неверная сортировка правильных ответов', question)
-                    await cursor.update(question)
+                    // noinspection JSVoidFunctionReturnValueUsed
+                    cursor3 = await cursor3.continue()
                 }
                 // noinspection JSVoidFunctionReturnValueUsed
-                cursor = await cursor.continue()
+                cursor2 = await cursor2.continue()
             }
-        }
-
-        if (oldVersion <= 7) {
-            console.log('Этап обновления с версии 7 на 8')
-            transaction.objectStore('questions').createIndex('topics', 'topics', {multiEntry: true})
-            transaction.objectStore('questions').deleteIndex('question')
-            transaction.objectStore('questions').createIndex('question', 'question', {unique: true})
-            transaction.objectStore('topics').deleteIndex('code')
-            transaction.objectStore('topics').createIndex('code', 'code', {unique: true})
-            transaction.objectStore('topics').deleteIndex('id')
-            transaction.objectStore('topics').createIndex('id', 'id', {unique: true})
-        }
-
-        if (oldVersion <= 8) {
-            console.log('Этап обновления с версии 8 на 9')
-            transaction.objectStore('topics').deleteIndex('needComplete')
-            transaction.objectStore('topics').createIndex('completed', 'completed')
         }
 
         console.log('Обновление базы данных завершено')
     }
+
+    settings = await db.get('other', 'settings')
 
     if (firstInit) {
         console.log('первая загрузка, загружаем ответы в базу данных')
@@ -274,6 +267,7 @@ async function init() {
         }
 
         await reimportEducationElements()
+        firstInit = false
     }
     console.log('started background!')
 }
@@ -289,7 +283,7 @@ self.addEventListener('install', () => {
                 await initializeFunc
             }
         }
-        if (info.menuItemId === 'download') {
+        if (settings.mode === 'manual' && info.menuItemId === 'download') {
             chrome.tabs.create({url: 'options/options.html'})
         }
     })
@@ -321,11 +315,11 @@ async function reimportEducationElements() {
             if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(ee[0])) {
                 object.id = ee[0]
             } else {
-                object.name = ee[0].trim().toLowerCase()
+                object.name = normalizeText(ee[0])
             }
         } else if (ee[0]?.trim() && ee[1]?.trim()) {
             object.code = ee[0].trim()
-            object.name = ee[1].trim().toLowerCase()
+            object.name = normalizeText(ee[1])
         }
 
         let topic
@@ -444,7 +438,7 @@ async function joinQuestions() {
                         continue
                     }
                     changed = true
-                    question.push(newTopicKey)
+                    question.topics.push(newTopicKey)
                 }
             }
 
@@ -509,6 +503,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         (async () => {
             await initializeFunc
             await db.put('other', message.authData, 'authData')
+            if (!message.cabinet) message.cabinet = 'vo'
+            message.cabinet = 'nmfo-' + message.cabinet
             await db.put('other', message.cabinet, 'cabinet')
         })()
     }
@@ -566,7 +562,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     } else {
         let response
         try {
-            response = await chrome.tabs.sendMessage(tab.id, {status: true})
+            response = await chrome.tabs.sendMessage(tab.id, {hasTest: true})
         } catch (error) {
             if (error.message.includes('Receiving end does not exist')) {
                 showNotification('Ошибка', 'Похоже на данной вкладке открыт НЕ портал НМО (или что-то не относящееся к тестам ОИМ), если это не так - попробуйте обновить страницу')
@@ -691,9 +687,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     }
 
     const authData = await db.get('other', 'authData')
-    let cabinet = await db.get('other', 'cabinet')
-    if (!cabinet) cabinet = 'vo'
-    cabinet = 'nmfo-' + cabinet
+    const cabinet = await db.get('other', 'cabinet')
 
     let foundEE
     if (educationalElement.id) {
@@ -754,10 +748,10 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
                     foundEE = json2
                     break
                 }
-            } else if (educationalElement.name === json2.name.trim().toLowerCase()) {
+            } else if (educationalElement.name === normalizeText(json2.name)) {
                 foundEE = json2
                 break
-            } else if (cut && json2.name.trim().toLowerCase().includes(educationalElement.name)) {
+            } else if (cut && normalizeText(json2.name).includes(educationalElement.name)) {
                 foundEE = json2
                 break
             }
@@ -770,7 +764,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
 
     await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
 
-    foundEE.name = foundEE.name.trim().toLowerCase()
+    foundEE.name = normalizeText(foundEE.name)
 
     if (educationalElement.name && educationalElement.name !== foundEE.name) {
         console.warn('Названия не соответствуют:')
@@ -828,6 +822,7 @@ async function checkErrors(json, updatedToken) {
     if (json.error) {
         if ((json.error_description?.includes('token expired') || json.error_description?.includes('access token')) && !updatedToken) {
             const authData = await db.get('other', 'authData')
+            const cabinet = await db.get('other', 'cabinet')
             if (authData?.refresh_token) {
                 const response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=${authData.refresh_token}`, {
                     headers: {"Content-Type": "application/x-www-form-urlencoded", Authorization: 'Basic ' + btoa(`client:secret`)},
@@ -930,7 +925,8 @@ chrome.runtime.onConnect.addListener((port) => {
                         // }
                         console.log('добавлены новые варианты ответов', question)
                     }
-                    port.postMessage(answers)
+                    question.answers[answerHash].lastUsedAnswers = answers
+                    port.postMessage({answers, question})
                 // если найден и вопрос и к нему вариант ответов
                 } else {
                     if (!question.lastOrder) question.lastOrder = {}
@@ -941,12 +937,15 @@ chrome.runtime.onConnect.addListener((port) => {
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
                         console.log('отправлен ответ', question)
-                        port.postMessage(question.correctAnswers[answerHash])
+                        port.postMessage({answers: question.correctAnswers[answerHash], question, correct: true})
                     // если нет правильных ответов, предлагаем рандомный предполагаемый вариант правильного ответа
                     } else {
                         let combination = question.answers[answerHash].combinations?.[Math.floor(Math.random()*question.answers[answerHash].combinations?.length)]
                         let answers = []
-                        if (combination?.length) {
+                        if (question.answers[answerHash].lastUsedAnswers) {
+                            console.log('даны те ответы что расширение раньше предлагало', question)
+                            answers = question.answers[answerHash].lastUsedAnswers
+                        } else if (combination?.length) {
                             console.log('предложен другой вариант ответа', question)
                             answers = combination.map(index => question.answers[answerHash].answers[index])
                         } else {
@@ -987,7 +986,8 @@ chrome.runtime.onConnect.addListener((port) => {
                         //         answers = question.correctAnswers[answerHash]
                         //     }
                         // }
-                        port.postMessage(answers)
+                        question.answers[answerHash].lastUsedAnswers = answers
+                        port.postMessage({answers, question})
                     }
                 }
                 if (!question.topics.includes(topicKey)) {
@@ -1011,11 +1011,13 @@ chrome.runtime.onConnect.addListener((port) => {
                 // if (question.correctAnswers[answerHash]) {
                 //     answers = question.correctAnswers[answerHash]
                 // }
-                port.postMessage(answers)
+                question.answers[answerHash].lastUsedAnswers = answers
+                port.postMessage({answers, question})
                 await db.put('questions', question)
             }
         // сохранение результатов теста с правильными и не правильными ответами
         } else if (message.results) {
+            let stats = {correct: 0, taken: 0, ignored: 0}
             for (const resultQuestion of message.results) {
                 let topicKey = await db.getKeyFromIndex('topics', 'name', resultQuestion.topics[0])
                 if (!topicKey) {
@@ -1035,14 +1037,17 @@ chrome.runtime.onConnect.addListener((port) => {
                         }
                         key = await db.put('questions', correctQuestion)
                         console.log('записан новый ответ с новым вопросом', correctQuestion)
+                        stats.correct++
                     } else {
                         console.log('пропущено', resultQuestion)
+                        stats.ignored++
                     }
                 // сохраняем правильный ответ или учитываем не правильный ответ
                 } else {
                     const question = await db.get('questions', key)
                     let changedCombinations = false
                     let changedAnswers = false
+                    let notAnswered = false
                     const foundAnswerHash = question.lastOrder?.[resultQuestion.lastOrder]
                     // если ответ правильный, сохраняем правильные ответы, и удаляем combinations находя по ответам нужный вариант ответов
                     if (resultQuestion.answers.answers?.length && resultQuestion.correct) {
@@ -1073,11 +1078,13 @@ chrome.runtime.onConnect.addListener((port) => {
                         }
                         if (matchAnswers.length > 1) {
                             console.warn('Найдено больше 1-го варианта ответов, не возможно сохранить правильный ответ', resultQuestion, question)
+                            stats.ignored++
                         } else if (!matchAnswers.length) {
                             const oldAnswers = JSON.stringify(question.correctAnswers['unknown'])
                             if (!question.correctAnswers['unknown']) question.correctAnswers['unknown'] = []
                             question.correctAnswers['unknown'] = Array.from(new Set(question.correctAnswers['unknown'].concat(resultQuestion.answers.answers)))
                             changedAnswers = oldAnswers !== JSON.stringify(question.correctAnswers)
+                            stats.taken++
                         } else {
                             let fakeCorrectAnswers = false
                             if (question.correctAnswers[matchAnswers[0]]) {
@@ -1092,10 +1099,14 @@ chrome.runtime.onConnect.addListener((port) => {
                                         changedAnswers = true
                                         question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.answers
                                     }
+                                    stats.taken++
+                                } else {
+                                    stats.ignored++
                                 }
                             } else {
                                 changedAnswers = true
                                 question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.answers
+                                stats.correct++
                             }
                             if (question.answers[matchAnswers[0]].combinations) {
                                 changedCombinations = true
@@ -1181,6 +1192,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         }
                         if (matchAnswers.length > 1) {
                             console.warn('Найдено больше 1-го варианта ответов, не возможно сохранить использованную комбинацию', resultQuestion, question)
+                            stats.ignored++
                         } else if (!matchAnswers.length) {
                             if (foundAnswerHash) {
                                 // TODO возможно тут следует заново генерировать комбинации, правда это чревато цикличным подбором ответов
@@ -1188,18 +1200,22 @@ chrome.runtime.onConnect.addListener((port) => {
                             } else {
                                 console.warn('пропущено, не найдена комбинация', resultQuestion, question)
                             }
+                            stats.ignored++
                         } else if (!fakeCorrectAnswers) {
                             // удаляем ту комбинацию которая была использована при попытке
                             changedCombinations = true
                             question.answers[matchAnswers[0].answerHash].combinations.splice(matchAnswers[0].index, 1)
+                            stats.taken++
                         }
                     } else {
-                        // console.warn('пропущено, не предоставлены ответы', resultQuestion)
+                        notAnswered = true
                         console.log('пропущено, не предоставлены ответы', resultQuestion, question)
+                        stats.ignored++
                     }
                     if (foundAnswerHash) {
                         changedCombinations = true
-                        delete question.lastOrder[resultQuestion.lastOrder]
+                        delete question.lastOrder?.[resultQuestion.lastOrder]
+                        if (!notAnswered) delete question.answers[foundAnswerHash].lastUsedAnswers
 
                         if (!question.topics.includes(topicKey)) {
                             question.topics.push(topicKey)
@@ -1216,6 +1232,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                 }
             }
+            port.postMessage({stats})
         } else if (message.running != null || message.collectAnswers != null) {
             if (message.running || message.collectAnswers) {
                 if (message.collectAnswers) collectAnswers = message.collectAnswers
@@ -1409,15 +1426,16 @@ async function searchOn24forcare(topic, topicKey) {
             const response2 = await fetch(found.href, {signal: controller.signal})
             const text2 = await response2.text()
             const doc2 = new JSDOM(text2).window.document
-            let topicText = changeLetters(doc2.querySelector('h1').textContent.trim())
+            let topicText = normalizeText(doc2.querySelector('h1').textContent)
             // if (topicText.startsWith('Тест с ответами по теме «')) {
             //     topicText = topicText.replaceAll('Тест с ответами по теме «', '')
             //     topicText = topicText.slice(0, -1)
             // }
             console.log('Найдено ' + topicText)
             for (const el of doc2.querySelectorAll('.row h3')) {
+                // noinspection JSDeprecatedSymbols
                 if (el.querySelector('tt') || el.querySelector('em')) continue // обрезаем всякую рекламу
-                const questionText = changeLetters(el.textContent.trim().replace(/^\d+\.\s*/, '')).toLowerCase()
+                const questionText = normalizeText(el.textContent.trim().replace(/^\d+\.\s*/, ''))
                 const key = await db.getKeyFromIndex('questions', 'question', questionText)
                 let question = {answers: {}, correctAnswers: {}}
                 if (key) {
@@ -1428,7 +1446,7 @@ async function searchOn24forcare(topic, topicKey) {
                 for (const answer of el.nextElementSibling.childNodes) {
                     if (!answer.textContent.trim()) continue
                     // noinspection RegExpRedundantEscape
-                    const text = changeLetters(answer.textContent.trim()).replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, '').toLowerCase()
+                    const text = normalizeText(answer.textContent).replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, '')
                     if (answer.tagName === 'STRONG') {
                         correctAnswers.push(text)
                     }
@@ -1480,32 +1498,11 @@ async function searchOn24forcare(topic, topicKey) {
     } catch (error) {
         console.error('Ошибка поиска ответов на сайте 24forcare.com', error)
     } finally {
-        if (stopRunning) return
-        chrome.action.setTitle({title: 'Расширение решает тест'})
-        chrome.action.setBadgeText({text: 'ON'})
+        if (!stopRunning) {
+            chrome.action.setTitle({title: 'Расширение решает тест'})
+            chrome.action.setBadgeText({text: 'ON'})
+        }
     }
-}
-
-function changeLetters(str) {
-    const replacements = {
-        'a': 'а',
-        'e': 'е',
-        'o': 'о',
-        'c': 'с',
-        'x': 'х'
-    };
-
-    for (const [latin, cyrillic] of Object.entries(replacements)) {
-        // Заменяем латинскую букву на кириллическую, если:
-        // 1. Она окружена кириллическими буквами
-        // 2. Или если она стоит одна, окруженная пробелами или знаками препинания
-        const regex = new RegExp(
-            `(?<=[\\u0400-\\u04FF])${latin}|${latin}(?=[\\u0400-\\u04FF])|\\b${latin}\\b`,
-            'gi'
-        );
-        str = str.replace(regex, cyrillic);
-    }
-    return str;
 }
 
 function showNotification(title, message) {

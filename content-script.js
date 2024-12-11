@@ -9,43 +9,94 @@ let stopRunning = false
 let countSaveAnswers = 0
 let countAnsweredAnswers = 0
 let rejectWait
-let shadowRoot
+
+let cachedQuestion, cachedAnswers, cachedCorrect, sentResults
 
 let settings
 
+let highLightDiv, statusBody
+if (document.location.href.includes('/quiz-wrapper/')) {
+    const shadowRoot = document.body.attachShadow({mode: 'closed'})
+    shadowRoot.append(document.createElement('slot'))
+    highLightDiv = document.createElement('div')
+    shadowRoot.prepend(highLightDiv)
+    const statusDiv = document.createElement('div')
+    statusDiv.style.bottom = '0'
+    statusDiv.style.left = '0'
+    statusDiv.style.position = 'fixed'
+    statusDiv.style.padding = '1em'
+    statusDiv.style.zIndex = '2147483647'
+    const statusTittle = document.createElement('div')
+    statusTittle.textContent = 'НМО Решатель'
+    statusTittle.style.textAlign = 'center'
+    statusDiv.append(statusTittle)
+    statusBody = document.createElement('div')
+    statusDiv.append(statusBody)
+    shadowRoot.prepend(statusDiv)
+}
+
+
+function osReceiveStatus(message) {
+    if (message.running) {
+        stopRunning = false
+        nextRepeat = 0
+        start(message.collectAnswers)
+    }
+    if (message.initializing && statusBody) {
+        statusBody.innerText = 'Подождите\nИдёт инициализация\nлокальной базы данных\nэто может занять\nоколо 5-ти минут'
+    }
+    if (message.settings) {
+        settings = message.settings
+        listenQuestions()
+        if (document.querySelector('.questionList')) {
+            sendResults()
+        }
+    }
+}
 chrome.runtime.sendMessage({
     status: true,
     authData: JSON.parse(localStorage.getItem('rsmu_tokenData')),
     cabinet: document.location.host.split('.')[0].split('-')[1]
-}, (message) => {
-    if (message.running) {
-        stopRunning = false
-        start(message.collectAnswers)
-    }
-    if (message.settings) {
-        settings = message.settings
-    }
-})
+}, osReceiveStatus)
 
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     if (message.start) {
         if (stopRunning) {
             chrome.runtime.sendMessage({reloadPage: true})
         } else {
+            nextRepeat = 0
             start()
         }
     } else if (message.stop) {
         stopRunning = true
         if (rejectWait) rejectWait()
-    } else if (message.status) {
+    } else if (message.hasTest) {
         const hasTest = Boolean(document.querySelector('.v-tabsheet-caption-close')) || Boolean(document.querySelector('lib-quiz-page'))
         sendResponse({hasTest})
+    } else if (message.status) {
+        osReceiveStatus(message)
     }
 })
 
 async function portListener(message) {
-    if (message?.ping) {
-        port.postMessage({pong: true})
+    if (settings.mode === 'manual') {
+        if (statusBody) {
+            if (message.answers) {
+                cachedAnswers = message.answers
+                cachedQuestion = message.question
+                cachedCorrect = message.correct
+                if (document.querySelector('.question-inner-html-text')) {
+                    highlightAnswers()
+                    if (cachedCorrect) {
+                        statusBody.innerText = 'Подсвечены правильные ответы'
+                    } else {
+                        statusBody.innerText = 'Подсвечены предполагаемые ответы\n(методом подбора)'
+                    }
+                }
+            } else {
+                statusBody.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
+            }
+        }
         return
     }
 
@@ -80,7 +131,7 @@ async function portListener(message) {
         } else {
             element = checkedElement.closest('.mdc-form-field').lastElementChild
         }
-        const answersElements = document.querySelectorAll('.question-inner-html-text:not([disabled="true"])')
+        const answersElements = document.querySelectorAll('.question-inner-html-text')
         const idOfLastAnswer = answersElements[answersElements.length - 1].closest('.mdc-form-field').querySelector('input').id
         await simulateClick(element)
         await randomWait()
@@ -89,10 +140,10 @@ async function portListener(message) {
         checkedElement = document.querySelector('input[type="checkbox"]:checked')
     }
 
-    for (const answer of message.sort(() => 0.5 - Math.random())) {
-        const answersElements = document.querySelectorAll('.question-inner-html-text:not([disabled="true"])')
+    for (const answer of message.answers.sort(() => 0.5 - Math.random())) {
+        const answersElements = document.querySelectorAll('.question-inner-html-text')
         for (const el of answersElements) {
-            if (replaceBadSymbols(el.textContent).toLowerCase() === answer) {
+            if (normalizeText(el.textContent) === answer) {
                 // если он уже выбран, то нет смысла снова его тыкать
                 if (el.closest('.mdc-form-field').querySelector('input').checked) {
                     continue
@@ -195,7 +246,6 @@ async function start(collectAnswers) {
 
     countSaveAnswers = 0
     countAnsweredAnswers = 0
-    nextRepeat = 0
 
     await watchForElement('.v-app-loading', true)
 
@@ -207,7 +257,7 @@ async function start(collectAnswers) {
         if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')?.parentElement?.textContent === 'Быстрый переход') {
             await attemptToClosePopups()
 
-            const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()
+            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -238,7 +288,7 @@ async function start(collectAnswers) {
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
             await watchForElement('.c-table-clickable-cell')
         } else {
-            const topic = replaceBadSymbols(document.querySelector('.v-label.v-widget.wrap-text').innerText).replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()
+            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -252,6 +302,7 @@ async function start(collectAnswers) {
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
             if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
                 port.postMessage({done: true, topic, hasTest: true})
+                nextRepeat = 0
                 start()
             } else {
                 port.postMessage({done: true, topic})
@@ -343,7 +394,7 @@ async function start(collectAnswers) {
     const next = document.querySelector('.v-button-blue-button.v-button-icon-align-right:not([aria-disabled="true"])')
     if (next) {
         nextRepeat++
-        if (nextRepeat > 7) {
+        if (nextRepeat > 16) {
             chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток переключиться на следующий этап (вперёд)'})
             return
         }
@@ -387,22 +438,7 @@ async function runTest() {
     
     // сбор правильных и не правильных ответов
     if (document.querySelector('.questionList')) {
-        const correctAnswersElements = document.querySelectorAll('.questionList-item')
-        const results = []
-        for (const el of correctAnswersElements) {
-            const question = {
-                question: replaceBadSymbols(el.querySelector('.questionList-item-content-title').textContent).toLowerCase(),
-                answers: {
-                    type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
-                    answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => replaceBadSymbols(item.textContent).toLowerCase()).sort()
-                },
-                correct: Boolean(el.querySelector('[svgicon="correct"]')),
-                topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()],
-                lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
-            }
-            results.push(question)
-        }
-        port.postMessage({results})
+        sendResults()
         await wait(1000)
         if (!stopRunning) {
             await simulateClick(document.querySelector('.mdc-button.mat-primary'))
@@ -418,16 +454,55 @@ async function runTest() {
         await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
     }
 
+    sendQuestion()
+}
+
+function sendQuestion() {
+    if (!port) {
+        port = chrome.runtime.connect()
+        port.onMessage.addListener(portListener)
+    }
     const question = {
-        question: replaceBadSymbols(document.querySelector('.question-title-text').textContent).toLowerCase(),
+        question: normalizeText(document.querySelector('.question-title-text').textContent),
         answers: {
             type: document.querySelector('.mat-card-question__type').textContent.trim(),
-            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => replaceBadSymbols(item.textContent).toLowerCase()).sort()
+            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeText(item.textContent)).sort()
         },
-        topics: [topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '').toLowerCase()],
+        topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
+    if (statusBody) {
+        cachedAnswers = null
+        cachedQuestion = question
+        statusBody.textContent = ''
+    }
     port.postMessage({question})
+}
+
+function sendResults() {
+    if (!port) {
+        port = chrome.runtime.connect()
+        port.onMessage.addListener(portListener)
+    }
+    if (sentResults) return
+    sentResults = true
+    if (statusBody) statusBody.textContent = 'Подождите, мы сохраняем результаты теста...'
+    const correctAnswersElements = document.querySelectorAll('.questionList-item')
+    const results = []
+    for (const el of correctAnswersElements) {
+        const question = {
+            question: normalizeText(el.querySelector('.questionList-item-content-title').textContent),
+            answers: {
+                type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
+                answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText(item.textContent)).sort()
+            },
+            correct: Boolean(el.querySelector('[svgicon="correct"]')),
+            topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
+            lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
+        }
+        results.push(question)
+    }
+    port.postMessage({results})
 }
 
 // console.log('injected!')
@@ -462,12 +537,7 @@ function watchForElement(selector, reverse) {
                 resolve(element)
             }
         })
-
-        observer.observe(document.documentElement, {
-            attributes: true,
-            childList: true,
-            subtree: true
-        })
+        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
     })
 }
 
@@ -503,12 +573,7 @@ function watchForText(selector, text, reverse) {
                 resolve(element)
             }
         })
-
-        observer.observe(document.documentElement, {
-            attributes: true,
-            childList: true,
-            subtree: true
-        })
+        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
     })
 }
 
@@ -584,22 +649,19 @@ function getRandomCoordinates(element, half) {
     return {x, y}
 }
 
-// супер пупер (наверно) защищённая функция от внешнего детекта на выделение цветом элемента
-function highlight(element) {
-    const shadow = document.body.attachShadow({mode: 'closed'})
-    shadow.append(document.createElement('slot'))
+function highlight(element, color) {
     const div = document.createElement('div')
     const clientRect = element.getBoundingClientRect()
     const clientOffset = getOffset(element)
-    div.style.position = 'absolute'
     div.style.left = clientOffset.left + 'px'
     div.style.top = clientOffset.top + 'px'
-    div.style.width = clientRect.width + 'px'
+    div.style.width = clientRect.width + 10 + 'px'
     div.style.height = clientRect.height + 'px'
-    div.style.background = 'rgb(190 123 9 / 70%)'
+    div.style.position = 'absolute'
+    div.style.background = color
     div.style.zIndex = '2147483647'
-    div.style.position = 'none'
-    shadow.prepend(div)
+    div.style.pointerEvents = 'none'
+    highLightDiv.append(div)
 }
 function getOffset(el) {
     const rect = el.getBoundingClientRect();
@@ -614,10 +676,6 @@ function stop() {
     countSaveAnswers = 0
     countAnsweredAnswers = 0
     port.postMessage({running: false, collectAnswers: null})
-}
-
-function replaceBadSymbols(text) {
-    return text.trim().replaceAll('<sup>', '').replaceAll('</sup>', '')
 }
 
 async function randomWait() {
@@ -638,8 +696,8 @@ function wait(ms) {
     })
 }
 
+// здесь дожидаемся когда все http (fetch) запросы save-answers завершатся
 async function waitSendAnswer() {
-    // здесь дожидаемся когда все http (fetch) запросы save-answers завершатся
     let count = 0
     while (count <= 150) {
         if (stopRunning) {
@@ -666,6 +724,49 @@ const observer = new PerformanceObserver((list) => {
         }
     }
 })
-observer.observe({
-    entryTypes: ["resource"]
-})
+observer.observe({entryTypes: ['resource']})
+
+function highlightAnswers(remove) {
+    console.log('обновлены вопросы')
+    if (!remove && (!cachedQuestion || cachedQuestion.question !== normalizeText(document.querySelector('.question-title-text').textContent))) {
+        sendQuestion()
+        return
+    }
+    highLightDiv.replaceChildren()
+    if (remove || !cachedAnswers) return
+    for (const el of document.querySelectorAll('.question-inner-html-text')) {
+        const formField = el.closest('.mdc-form-field')
+        if (formField.querySelector('input:disabled')) return
+        if (cachedAnswers.includes(normalizeText(el.textContent))) {
+            highlight(formField, cachedCorrect ? 'rgb(26 182 65 / 60%)' : 'rgb(190 123 9 / 60%)')
+        } else if (formField.querySelector('input:checked')) {
+            if (cachedCorrect) {
+                highlight(formField, 'rgb(190 9 9 / 60%)')
+            }
+        }
+    }
+}
+
+function listenQuestions() {
+    if (settings.mode === 'manual') {
+        function onChanged() {
+            if (document.querySelector('.question-inner-html-text')) {
+                highlightAnswers()
+            } else if (cachedQuestion) {
+                cachedQuestion = null
+                cachedAnswers = null
+                cachedCorrect = null
+                highlightAnswers(true)
+            }
+            if (document.querySelector('.questionList')) {
+                sendResults()
+            }
+        }
+
+        const observer = new MutationObserver(onChanged)
+        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
+
+        const resizeObserver = new ResizeObserver(onChanged)
+        resizeObserver.observe(document.documentElement)
+    }
+}

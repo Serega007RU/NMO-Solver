@@ -8,7 +8,7 @@
 	"content_scripts": [
 		{
 			"matches": ["https://*.edu.rosminzdrav.ru/*"],
-			"js": ["content-script.js"]
+			"js": ["utils.js", "content-script.js"]
 		},
 		{
 			"matches": ["https://*.edu.rosminzdrav.ru/quiz-wrapper/*"],
@@ -34,13 +34,12 @@
 		"declarativeNetRequest"
 	],
 	"host_permissions": [
-		"https://24forcare.com/*",
-		"https://groq.com/*"
+		"https://24forcare.com/*"
 	],
 	"action": {
 		"default_title": "Нажмите что бы запустить"
 	},
 	"update_url": "https://clients2.google.com/service/update2/crx",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"minimum_chrome_version": "105.0"
 }
