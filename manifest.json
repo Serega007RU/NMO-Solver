@@ -34,7 +34,8 @@
 		"declarativeNetRequest"
 	],
 	"host_permissions": [
-		"https://24forcare.com/*"
+		"https://24forcare.com/*",
+		"https://reshnmo.ru/*"
 	],
 	"action": {
 		"default_title": "Нажмите что бы запустить"

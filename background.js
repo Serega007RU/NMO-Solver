@@ -9,7 +9,7 @@ self.objectHash = objectHash
 let db
 let runningTab
 let stopRunning = false
-let controller
+let controller = new AbortController()
 let collectAnswers = 0
 let reloaded = 0
 let started = 0
@@ -869,7 +869,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 topicKey = topic.key
                 if (topic.needSearchAnswers) {
                     // TODO временно
-                    // await searchOn24forcare(message.question.topics[0], topic.key)
+                    // await searchOnSites(message.question.topics[0], topic.key)
                     delete topic.needSearchAnswers
                     await db.put('topics', topic)
                 }
@@ -877,7 +877,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 topicKey = await db.put('topics', {name: message.question.topics[0]})
                 console.log('Внесена новая тема в базу', message.question.topics[0])
                 // TODO временно
-                // await searchOn24forcare(message.question.topics[0], topicKey)
+                // await searchOnSites(message.question.topics[0], topicKey)
             }
             const key = await db.getKeyFromIndex('questions', 'question', message.question.question)
             // работа с найденным вопросом
@@ -1023,7 +1023,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (!topicKey) {
                     topicKey = await db.put('topics', {name: resultQuestion.topics[0]})
                     console.log('Внесена новая тема в базу', resultQuestion.topics[0])
-                    // await searchOn24forcare(resultQuestion.topics[0], topicKey)
+                    // await searchOnSites(resultQuestion.topics[0], topicKey)
                 }
                 let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
@@ -1384,12 +1384,30 @@ async function searchOnAI(question, answerHash) {
     }
 }
 
-self.searchOn24forcare = searchOn24forcare
-async function searchOn24forcare(topic, topicKey) {
+self.searchOnSites = searchOnSites
+async function searchOnSites(topic, topicKey) {
+    if (!topicKey) {
+        topicKey = await db.getKeyFromIndex('topics', 'name', topic)
+    }
     chrome.action.setTitle({title: 'Выполняется поиск ответов в интернете'})
     chrome.action.setBadgeText({text: 'SEARCH'})
-    // const origNameTopic = topic
     try {
+        await searchOn24forcare(topic, topicKey)
+        if (stopRunning) return
+        await searchOnReshnmo(topic, topicKey)
+        if (stopRunning) return
+    } finally {
+        if (!stopRunning) {
+            chrome.action.setTitle({title: 'Расширение решает тест'})
+            chrome.action.setBadgeText({text: 'ON'})
+        }
+    }
+}
+
+self.searchOn24forcare = searchOn24forcare
+async function searchOn24forcare(topic, topicKey) {
+    try {
+        chrome.action.setTitle({title: 'Выполняется поиск ответов на сайте 24forcare'})
         console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + '...')
         // c " на сайте плохо ищется
         topic = topic.replaceAll(/["«»]/gi, '')
@@ -1423,24 +1441,39 @@ async function searchOn24forcare(topic, topicKey) {
         }
         const searchTopics = doc.querySelector('.shot') && shot ? doc.querySelectorAll('.shot') : doc.querySelectorAll('.item-name')
         for (const found of searchTopics) {
+            let topicText = normalizeText(found.textContent)
+            if (topicText.startsWith('тест с ответами по теме «')) {
+                topicText = topicText.replaceAll('тест с ответами по теме «', '')
+                topicText = topicText.slice(0, -1)
+            }
+            let newTopic = await db.getFromIndex('topics', 'name', topicText)
+            if (newTopic) {
+                if (newTopic.needSearchAnswers) {
+                    delete newTopic.needSearchAnswers
+                    await db.put('topics', newTopic)
+                } else {
+                    continue
+                }
+            }
+
             const response2 = await fetch(found.href, {signal: controller.signal})
             const text2 = await response2.text()
             const doc2 = new JSDOM(text2).window.document
-            let topicText = normalizeText(doc2.querySelector('h1').textContent)
-            // if (topicText.startsWith('Тест с ответами по теме «')) {
-            //     topicText = topicText.replaceAll('Тест с ответами по теме «', '')
-            //     topicText = topicText.slice(0, -1)
-            // }
+            topicText = normalizeText(doc2.querySelector('h1').textContent)
+            if (topicText.startsWith('тест с ответами по теме «')) {
+                topicText = topicText.replaceAll('тест с ответами по теме «', '')
+                topicText = topicText.slice(0, -1)
+            }
             console.log('Найдено ' + topicText)
+            newTopic = await db.getFromIndex('topics', 'name', topicText)
+            if (!newTopic) {
+                topicKey = await db.put('topics', {name: topicText})
+                console.log('Внесена новая тема в базу', topicText)
+            }
             for (const el of doc2.querySelectorAll('.row h3')) {
                 // noinspection JSDeprecatedSymbols
                 if (el.querySelector('tt') || el.querySelector('em')) continue // обрезаем всякую рекламу
                 const questionText = normalizeText(el.textContent.trim().replace(/^\d+\.\s*/, ''))
-                const key = await db.getKeyFromIndex('questions', 'question', questionText)
-                let question = {answers: {}, correctAnswers: {}}
-                if (key) {
-                    question = await db.get('questions', key)
-                }
                 const answers = []
                 const correctAnswers = []
                 for (const answer of el.nextElementSibling.childNodes) {
@@ -1455,53 +1488,124 @@ async function searchOn24forcare(topic, topicKey) {
                 if (!answers.length || !correctAnswers.length) continue
                 answers.sort()
                 correctAnswers.sort()
-                const answersHash = objectHash(answers)
-                let changed = false
-                if (!question.answers[answersHash]) {
-                    changed = true
-                    question.answers[answersHash] = {answers}
-                } else if (question.answers[answersHash].combinations) {
-                    changed = true
-                    delete question.answers[answersHash].combinations
-                }
-                if (!question.correctAnswers[answersHash]) {
-                    changed = true
-                    question.correctAnswers[answersHash] = correctAnswers
-                }
-                if (question.correctAnswers['unknown']) {
-                    for (const answer of correctAnswers) {
-                        const index = question.correctAnswers['unknown'].indexOf(answer)
-                        if (index !== -1) {
-                            changed = true
-                            question.correctAnswers['unknown'].splice(index, 1)
-                        }
-                    }
-                }
-                if (question.correctAnswers['unknown']?.length === 0) {
-                    delete question.correctAnswers['unknown']
-                }
-                if (question.topics && !question.topics.includes(topicKey)) {
-                    question.topics.push(topicKey)
-                }
-                if (!key) {
-                    changed = true
-                    question.question = questionText
-                    question.topics = [topicKey]
-                }
-                if (changed) {
-                    console.log('С сайта 24forcare.com добавлены или изменены ответы в бд', question)
-                    await db.put('questions', question, key)
-                }
+                await joinAnswers(topicKey, questionText, answers, correctAnswers)
             }
         }
         console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + ' окончен')
     } catch (error) {
         console.error('Ошибка поиска ответов на сайте 24forcare.com', error)
-    } finally {
-        if (!stopRunning) {
-            chrome.action.setTitle({title: 'Расширение решает тест'})
-            chrome.action.setBadgeText({text: 'ON'})
+    }
+}
+
+async function searchOnReshnmo(topic, topicKey) {
+    try {
+        chrome.action.setTitle({title: 'Выполняется поиск ответов на сайте reshnmo.ru'})
+        console.log('Поиск ответов на сайте reshnmo.ru по теме ' + topic + '...')
+        let response = await fetch('https://reshnmo.ru/?s=' + topic)
+        let text = await response.text()
+        let doc = new JSDOM(text).window.document
+        // удаляем всякую рекламу
+        doc.querySelector('#secondary')?.remove()
+        doc.querySelector('#related-posts')?.remove()
+        if (!doc.querySelector('.post-cards .post-card__title')) {
+            console.warn('На сайте reshnmo.ru не удалось найти ответы по теме ' + topic)
+            return
         }
+        for (const found of doc.querySelectorAll('.post-cards .post-card__title')) {
+            let topicText = normalizeText(found.textContent)
+            topicText = topicText.replaceAll('тест с ответами по теме «', '').replaceAll('» | тесты нмо с ответами', '')
+            let newTopic = await db.getFromIndex('topics', 'name', topicText)
+            if (newTopic) {
+                if (newTopic.needSearchAnswers) {
+                    delete newTopic.needSearchAnswers
+                    await db.put('topics', newTopic)
+                } else {
+                    continue
+                }
+            }
+
+            const response2 = await fetch(found.querySelector('.post-card__title a').href)
+            const text2 = await response2.text()
+            const doc2 = new JSDOM(text2).window.document
+            topicText = normalizeText(doc2.querySelector('.entry-title').textContent)
+            topicText = topicText.replaceAll('тест с ответами по теме «', '').replaceAll('» | тесты нмо с ответами', '')
+            console.log('Найдено ' + topicText)
+            newTopic = await db.getFromIndex('topics', 'name', topicText)
+            if (!newTopic) {
+                topicKey = await db.put('topics', {name: topicText})
+                console.log('Внесена новая тема в базу', topicText)
+            }
+            for (const el of doc2.querySelectorAll('.entry-content h3')) {
+                // обрезаем всякую рекламу
+                if (el.id === 'spetsialnosti-dlya-predvaritelnogo-i-itogovogo') continue
+                const questionText = normalizeText(el.textContent.trim().replace(/^\d+\.\s*/, ''))
+                const answers = []
+                const correctAnswers = []
+                for (const answer of el.nextElementSibling.childNodes) {
+                    if (!answer.textContent.trim()) continue
+                    // noinspection RegExpRedundantEscape
+                    const text = normalizeText(answer.textContent.trim().replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, ''))
+                    if (answer.tagName === 'STRONG') {
+                        correctAnswers.push(text)
+                    }
+                    answers.push(text)
+                }
+                if (!answers.length || !correctAnswers.length) continue
+                answers.sort()
+                correctAnswers.sort()
+                await joinAnswers(topicKey, questionText, answers, correctAnswers)
+            }
+        }
+        console.log('Поиск ответов на сайте reshnmo.ru по теме ' + topic + ' окончен')
+    } catch (error) {
+        console.error('Ошибка поиска ответов на сайте reshnmo.ru', error)
+    }
+}
+
+async function joinAnswers(topicKey, questionText, answers, correctAnswers) {
+    const key = await db.getKeyFromIndex('questions', 'question', questionText)
+    let question = {
+        question: questionText,
+        answers: {},
+        correctAnswers: {},
+        topics: [topicKey]
+    }
+    if (key) {
+        question = await db.get('questions', key)
+    }
+    const answersHash = objectHash(answers)
+    let changed = {}
+    if (!question.answers[answersHash]) {
+        changed.answers = true
+        question.answers[answersHash] = {answers}
+    } else if (question.answers[answersHash].combinations) {
+        changed.combinations = true
+        delete question.answers[answersHash].combinations
+    }
+    if (!question.correctAnswers[answersHash]) {
+        changed.correctAnswers = true
+        question.correctAnswers[answersHash] = correctAnswers
+    }
+    if (question.correctAnswers['unknown']) {
+        for (const answer of correctAnswers) {
+            const index = question.correctAnswers['unknown'].indexOf(answer)
+            if (index !== -1) {
+                changed.correctAnswers = true
+                question.correctAnswers['unknown'].splice(index, 1)
+            }
+        }
+    }
+    if (question.correctAnswers['unknown']?.length === 0) {
+        changed.correctAnswers = true
+        delete question.correctAnswers['unknown']
+    }
+    if (!question.topics.includes(topicKey)) {
+        changed.topics = true
+        question.topics.push(topicKey)
+    }
+    if (Object.values(changed)) {
+        console.log('С интернета добавлены или изменены ответы в бд', question, JSON.stringify(changed))
+        // await db.put('questions', question, key)
     }
 }
 
