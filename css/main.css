@@ -1,0 +1,271 @@
+body {
+	background: #edf2fb;
+	font-family: Arial, serif;
+	transition: .3s opacity, .0s height;
+	height: 100vh;
+	min-height: 300px;
+}
+
+header {
+	width: 100%;
+}
+
+.export-import {
+	display: flex;
+	width: fit-content;
+	justify-self: center;
+}
+
+.export-import > button {
+	position: relative;
+	width: 250px;
+	cursor: pointer;
+	box-sizing: content-box;
+	outline: none;
+	border: none;
+	margin: 0 10px;
+	height: 30px;
+	padding: 5px 20px;
+	display: flex;
+	background: #ccdbfd;
+	border-bottom-left-radius: 10px;
+	border-bottom-right-radius: 10px;
+}
+
+.export-import > button > .status {
+	position: absolute;
+	top: 50px;
+	left: 0;
+	white-space: pre-wrap;
+	text-align: left;
+	padding: 0 10px;
+	width: 100%;
+}
+
+.export-import > button > div {
+	font-weight: 600;
+	margin: auto 0 auto 10px;
+}
+
+.export-import > button > img {
+	margin: auto 0;
+}
+
+nav {
+	margin-top: 130px;
+	width: 100%;
+	display: grid;
+	gap: 20px;
+	grid-auto-flow: column;
+	justify-content: center;
+	margin-bottom: 20px;
+}
+
+nav > button {
+	width: 170px;
+	border: none;
+	border-radius: 7px;
+	padding: 8px;
+	font-weight: 600;
+	background: #b6ccfe;
+	outline: none;
+	cursor: pointer;
+	transition: .3s;
+}
+
+nav > button:hover {
+	background: #97e4af;
+	opacity: .8;
+}
+
+nav > button.active {
+	background: #97e4af;
+	opacity: 1 !important;
+}
+
+nav > button:hover[data-block="disabled"] {
+	background: #f08080;
+}
+
+nav > button.active[data-block="disabled"] {
+	background: #f08080;
+}
+
+main .block {
+	padding: 10px 30px;
+	text-align: center;
+	display: none;
+	width: 800px;
+	margin: 0 auto;
+	background: #d7e3fc;
+	border-radius: 15px;
+}
+
+main .block.active {
+	display: block;
+}
+
+.base-button {
+	cursor: pointer;
+	outline: none;
+	border: none;
+	border-radius: 10px;
+	padding: 10px 20px;
+	color: #ffffff;
+	background: #47cf73;
+	display: block;
+	margin: 10px auto;
+	transition: .3s;
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+	opacity: 1;
+}
+
+input[disabled="disabled"],
+select[disabled="disabled"] {
+	opacity: .8;
+	cursor: not-allowed;
+}
+
+.input-block {
+	margin: auto;
+	display: flex;
+}
+
+.input-block label {
+	display: block;
+	text-align: center;
+	margin: auto 0 auto 10px;
+}
+
+.input-block input,
+.input-block select {
+	display: block;
+	min-width: 150px;
+	text-align: left;
+	box-sizing: border-box;
+	outline: none;
+	background: #edf2fb;
+	border-radius: 5px;
+	border: none;
+	padding: 5px;
+	transition: .3s;
+}
+
+fieldset {
+	border: solid #ffffff 2px;
+	border-radius: 10px;
+	padding: 0 10px 10px;
+}
+
+legend {
+	font-weight: 600;
+	letter-spacing: 1px;
+	padding: 0 7px 7px;
+	margin: 0 20px;
+}
+
+fieldset div {
+	text-align: center;
+	margin-bottom: 5px;
+}
+
+.toggle-pill-color {
+	justify-content: left;
+	display: flex;
+	margin: auto 0 10px;
+}
+
+.toggle-pill-color .label {
+	display: block;
+	margin: auto 10px;
+}
+
+.toggle-pill-color input[type="checkbox"] {
+	display: none;
+}
+
+.toggle-pill-color input[type="checkbox"] + label {
+	display: block;
+	position: relative;
+	width: 3em;
+	height: 1.6em;
+	border-radius: 1em;
+	background: #f08080;
+	box-shadow: inset 0px 0px 5px rgba(0, 0, 0, 0.3);
+	cursor: pointer;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	-webkit-transition: background 0.1s ease-in-out;
+	transition: background 0.1s ease-in-out;
+}
+
+.toggle-pill-color input[type="checkbox"] + label:before {
+	content: "";
+	display: block;
+	width: 1.2em;
+	height: 1.2em;
+	border-radius: 1em;
+	background: #fff;
+	box-shadow: 2px 0px 5px rgba(0, 0, 0, 0.2);
+	position: absolute;
+	left: 0.2em;
+	top: 0.2em;
+	-webkit-transition: all 0.2s ease-in-out;
+	transition: all 0.2s ease-in-out;
+}
+
+.toggle-pill-color input[type="checkbox"]:checked + label {
+	background: #97e4af;
+}
+
+.toggle-pill-color input[type="checkbox"]:checked + label:before {
+	box-shadow: -2px 0px 5px rgba(0, 0, 0, 0.2);
+	left: 1.6em;
+}
+
+.toggle-pill-color input[type="checkbox"][disabled="disabled"] + label {
+	opacity: .8;
+	cursor: not-allowed;
+}
+
+.toggle-pill-color input[type="checkbox"][disabled="disabled"] + label:before {
+	opacity: .8;
+	cursor: not-allowed;
+}
+
+::-webkit-scrollbar-button {
+	background-repeat: no-repeat;
+	width: 5px;
+	height: 0;
+	border-radius: 5px;
+}
+
+::-webkit-scrollbar-track {
+	background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: #2d59af;
+	border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background-color: #2d59af;
+}
+
+::-webkit-resizer {
+	background-repeat: no-repeat;
+	width: 5px;
+	height: 0;
+	border-radius: 5px;
+}
+
+::-webkit-scrollbar {
+	width: 5px;
+	height: 5px;
+	border-radius: 5px;
+}

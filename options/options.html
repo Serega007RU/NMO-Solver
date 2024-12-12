@@ -1,11 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Загрузка...</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>NMO Решатель</title>
+    <link rel="stylesheet" href="../css/reset.css">
+    <link rel="stylesheet" href="../css/main.css">
 </head>
 <body>
-Загрузка...
+<header>
+    <div class="export-import">
+        <button>
+            <img src="/img/export.svg" alt="export">
+            <div>Экспорт БД</div>
+            <span class="status">321</span>
+        </button>
+        <button>
+            <img src="/img/import.svg" alt="import">
+            <div>Импорт БД (Объединить)</div>
+            <span class="status">123</span>
+        </button>
+    </div>
+    <nav>
+        <button data-block="disabled">Отключено</button>
+        <button data-block="manual" class="active">Ручной</button>
+        <button data-block="semi-auto">Полу-Автоматический</button>
+        <button data-block="auto">Автоматический</button>
+    </nav>
+</header>
+<main>
+    <div class="block" data-block="disabled">
+        ВЫКЛЮЧЕНО ЕПАТА
+    </div>
+    <div class="block active" data-block="manual">
+        <div class="toggle-pill-color">
+            <input type="checkbox" id="sett1" name="sett1">
+            <label for="sett1"></label>
+            <div class="label">Какой то переключатель</div>
+        </div>
+        <div class="toggle-pill-color">
+            <input type="checkbox" id="sett2" name="sett2">
+            <label for="sett2"></label>
+            <div class="label">Писать через Ё</div>
+        </div>
+        <div class="input-block">
+            <input type="number" id="sett3" name="bet_amount" min="0" max="10" step="0.1" placeholder="Введите гавно...">
+            <label for="sett3">Какой-то параметр</label>
+        </div>
+    </div>
+    <div class="block" data-block="semi-auto">3</div>
+    <div class="block" data-block="auto">4</div>
+</main>
 <script type="module" src="options.js"></script>
 </body>
 </html>
