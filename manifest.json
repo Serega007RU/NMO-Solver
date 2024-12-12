@@ -5,18 +5,6 @@
 		"service_worker": "background.js",
 		"type": "module"
 	},
-	"content_scripts": [
-		{
-			"matches": ["https://*.edu.rosminzdrav.ru/*"],
-			"js": ["utils.js", "content-script.js"]
-		},
-		{
-			"matches": ["https://*.edu.rosminzdrav.ru/quiz-wrapper/*"],
-			"world": "MAIN",
-			"run_at": "document_start",
-			"js": ["visible.js"]
-		}
-	],
 	"description": "Автоматическое решение тестов на портале НМО",
 	"manifest_version": 3,
 	"name": "НМО Решатель",
@@ -31,10 +19,12 @@
 	"permissions": [
 		"unlimitedStorage",
 		"notifications",
-		"contextMenus",
-		"declarativeNetRequest"
+		"declarativeNetRequest",
+		"scripting",
+		"tabs"
 	],
 	"host_permissions": [
+		"https://*.edu.rosminzdrav.ru/*",
 		"https://24forcare.com/*",
 		"https://reshnmo.ru/*"
 	],

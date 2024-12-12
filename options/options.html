@@ -4,54 +4,87 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>NMO Решатель</title>
+    <title>НМО Решатель Настройки</title>
     <link rel="stylesheet" href="../css/reset.css">
     <link rel="stylesheet" href="../css/main.css">
 </head>
 <body>
-<header>
-    <div class="export-import">
-        <button>
-            <img src="/img/export.svg" alt="export">
-            <div>Экспорт БД</div>
-            <span class="status">321</span>
-        </button>
-        <button>
-            <img src="/img/import.svg" alt="import">
-            <div>Импорт БД (Объединить)</div>
-            <span class="status">123</span>
-        </button>
-    </div>
-    <nav>
-        <button data-block="disabled">Отключено</button>
-        <button data-block="manual" class="active">Ручной</button>
-        <button data-block="semi-auto">Полу-Автоматический</button>
-        <button data-block="auto">Автоматический</button>
-    </nav>
-</header>
-<main>
-    <div class="block" data-block="disabled">
-        ВЫКЛЮЧЕНО ЕПАТА
-    </div>
-    <div class="block active" data-block="manual">
-        <div class="toggle-pill-color">
-            <input type="checkbox" id="sett1" name="sett1">
-            <label for="sett1"></label>
-            <div class="label">Какой то переключатель</div>
+<div class="loading">
+    <div id="LoadingText">Загрузка...</div>
+    <img src="/img/spinner.svg" alt="loading">
+</div>
+<div class="main" style="display: none">
+    <header>
+        <div class="export-import">
+            <button id="importdb" type="file" accept="application/json">
+                <img src="/img/import.svg" alt="import">
+                <div>Импорт БД (Объединить)</div>
+                <span class="status"></span>
+            </button>
+            <button id="exportdb">
+                <img src="/img/export.svg" alt="export">
+                <div>Экспорт БД</div>
+                <span class="status"></span>
+            </button>
         </div>
-        <div class="toggle-pill-color">
-            <input type="checkbox" id="sett2" name="sett2">
-            <label for="sett2"></label>
-            <div class="label">Писать через Ё</div>
+        <nav>
+            <button data-block="disabled">Отключено</button>
+            <button data-block="manual" class="active">Ручной</button>
+            <button data-block="semi-auto">Полу-автоматический</button>
+            <button data-block="auto">Автоматический</button>
+        </nav>
+    </header>
+    <main>
+        <div class="block" data-block="disabled">
+            Расширение никак не будет влиять
         </div>
-        <div class="input-block">
-            <input type="number" id="sett3" name="bet_amount" min="0" max="10" step="0.1" placeholder="Введите гавно...">
-            <label for="sett3">Какой-то параметр</label>
+        <div class="block active" data-block="manual">
+            Ручной режим: это режим в котором будут подсвечиваться правильные (или предлагаемые) ответы во время прохождения теста.
+<!--            <br>-->
+<!--            Этот режим безопасный, в данном режиме порталом не возможно будет обнаружить присутствие расширения (кроме косвенных причин)-->
         </div>
-    </div>
-    <div class="block" data-block="semi-auto">3</div>
-    <div class="block" data-block="auto">4</div>
-</main>
+        <div class="block" data-block="semi-auto">
+            Полу-автоматический режим: в этом режиме расширение сам будет проходить открытые вами тесты.
+            <br>
+            Что бы запустить процесс автоматического теста вам необходимо нажать на значок расширения справа сверху находясь на странице с тестом.
+<!--            <br>-->
+<!--            Обращаем внимание, что использование этого режима технически порталом может быть обнаружено (нарушение пункта 6.3.1 пользовательского соглашения портала).-->
+            <br><br>
+<!--            <div class="toggle-pill-color">-->
+<!--                <input type="checkbox" id="EnabledCombinations" name="EnabledCombinations">-->
+<!--                <label for="EnabledCombinations"></label>-->
+<!--                <div class="label">Если нет ответов в бд, подбирать их методом подбора</div>-->
+<!--            </div>-->
+            <div class="input-block">
+                <input type="number" id="ClickWaitMin" name="ClickWait" min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="ClickWaitMax" name="ClickWait" min="0" max="999" step="0.1" placeholder="макс">
+                <label for="ClickWaitMin">Задержка между нажатиями (миним. и макс. в секундах)</label>
+            </div>
+            <div class="input-block">
+                <input type="number" id="AnswerWaitMin" name="AnswerWait" min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="AnswerWaitMax" name="AnswerWait" min="0" max="999" step="0.1" placeholder="макс">
+                <label for="AnswerWaitMin">Сколько времени думать над вопросом (миним. и макс. в секундах)</label>
+            </div>
+            <div class="input-block">
+                <input type="number" id="MaxAttemptsNext" name="MaxAttemptsNext" min="0" max="999" step="1" placeholder="кол-во">
+                <label for="MaxAttemptsNext">Максимальное кол-во попыток нажатий на "Следующий"</label>
+            </div>
+            <div class="input-block">
+                <input type="number" id="MaxReloadTab" name="MaxReloadTab" min="0" max="999" step="1" placeholder="кол-во">
+                <label for="MaxReloadTab">Максимальное кол-во попыток перезагрузки вкладки</label>
+            </div>
+            <div class="input-block">
+                <input type="number" id="MaxReloadTest" name="MaxReloadTab" min="0" max="999" step="1" placeholder="кол-во">
+                <label for="MaxReloadTest">Максимальное кол-во попыток перезапуска теста</label>
+            </div>
+        </div>
+        <div class="block" data-block="auto">
+            В разработке
+        </div>
+    </main>
+</div>
+<script type="module" src="../normalize-text.js"></script>
+<script type="module" src="../utils.js"></script>
 <script type="module" src="options.js"></script>
 </body>
 </html>

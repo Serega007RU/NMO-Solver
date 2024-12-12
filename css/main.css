@@ -10,6 +10,12 @@ header {
 	width: 100%;
 }
 
+.loading {
+	text-align: center;
+	position: relative;
+	top: 10%;
+}
+
 .export-import {
 	display: flex;
 	width: fit-content;
@@ -93,7 +99,7 @@ nav > button.active[data-block="disabled"] {
 
 main .block {
 	padding: 10px 30px;
-	text-align: center;
+	/* text-align: center; */
 	display: none;
 	width: 800px;
 	margin: 0 auto;
@@ -130,8 +136,8 @@ select[disabled="disabled"] {
 }
 
 .input-block {
-	margin: auto;
 	display: flex;
+	margin: auto 0 10px;
 }
 
 .input-block label {
@@ -143,7 +149,7 @@ select[disabled="disabled"] {
 .input-block input,
 .input-block select {
 	display: block;
-	min-width: 150px;
+	/* min-width: 150px; */
 	text-align: left;
 	box-sizing: border-box;
 	outline: none;

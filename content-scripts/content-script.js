@@ -1,7 +1,5 @@
 let simulateUser = false
-let minWait = 500
-let maxWait = 2000
-let goodScore = true
+let goodScore = false
 
 let hasGoodScore = false
 let port
@@ -9,8 +7,9 @@ let stopRunning = false
 let countSaveAnswers = 0
 let countAnsweredAnswers = 0
 let rejectWait
+let running
 
-let cachedQuestion, cachedAnswers, cachedCorrect, sentResults
+let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, sentResults
 
 let settings
 
@@ -41,6 +40,7 @@ function osReceiveStatus(message) {
         stopRunning = false
         nextRepeat = 0
         start(message.collectAnswers)
+        running = true
     }
     if (message.initializing && statusBody) {
         statusBody.innerText = 'Подождите\nИдёт инициализация\nлокальной базы данных\nэто может занять\nоколо 5-ти минут'
@@ -65,9 +65,11 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
             chrome.runtime.sendMessage({reloadPage: true})
         } else {
             nextRepeat = 0
+            running = true
             start()
         }
     } else if (message.stop) {
+        running = false
         stopRunning = true
         if (rejectWait) rejectWait()
     } else if (message.hasTest) {
@@ -79,18 +81,19 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 })
 
 async function portListener(message) {
-    if (settings.mode === 'manual') {
+    if (settings.mode === 'manual' || !running) {
         if (statusBody) {
             if (message.answers) {
                 cachedAnswers = message.answers
                 cachedQuestion = message.question
                 cachedCorrect = message.correct
+                cachedAnswerHash = message.answerHash
                 if (document.querySelector('.question-inner-html-text')) {
                     highlightAnswers()
                     if (cachedCorrect) {
                         statusBody.innerText = 'Подсвечены правильные ответы'
                     } else {
-                        statusBody.innerText = 'Подсвечены предполагаемые ответы\n(методом подбора)'
+                        statusBody.innerText = 'Подсвечены предполагаемые ответы\n(методом подбора)\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
                     }
                 }
             } else {
@@ -238,6 +241,7 @@ async function start(collectAnswers) {
         stop()
         return
     }
+    if (!running) return
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
@@ -394,7 +398,7 @@ async function start(collectAnswers) {
     const next = document.querySelector('.v-button-blue-button.v-button-icon-align-right:not([aria-disabled="true"])')
     if (next) {
         nextRepeat++
-        if (nextRepeat > 16) {
+        if (nextRepeat > settings.maxAttemptsNext) {
             chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток переключиться на следующий этап (вперёд)'})
             return
         }
@@ -449,9 +453,8 @@ async function runTest() {
     }
 
     // тут мы типо думаем над вопросом, от 3 до 30 секунд
-    if (simulateUser && !topic.includes(' - Предварительное тестирование') && !topic.includes(' - Входное тестирование')) {
-        // await wait(Math.floor(Math.random() * (30000 - 3000) + 3000))
-        await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+    if (settings.answerWaitMax && !topic.includes(' - Предварительное тестирование') && !topic.includes(' - Входное тестирование')) {
+        await wait(Math.floor(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin))
     }
 
     sendQuestion()
@@ -579,6 +582,7 @@ function watchForText(selector, text, reverse) {
 
 async function simulateClick(element, count = 0) {
     if (count > 7) {
+        running = false
         port.postMessage({error: 'Не удалось найти кнопку относительно координат'})
         throw Error('Не удалось найти кнопку относительно координат')
     }
@@ -619,9 +623,9 @@ async function simulateClick(element, count = 0) {
     }
     const {x2, y2} = getRandomCoordinates(element)
     element.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window, clientX: x2, clientY: y2, screenX: x2, screenY: y2}))
-    if (simulateUser) await wait(Math.floor(Math.random() * (500 - 100) + 100))
+    if (settings.answerWaitMax) await wait(Math.floor(Math.random() * (500 - 100) + 100))
     element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 1, detail: 1}))
-    if (simulateUser) await wait(Math.floor(Math.random() * (250 - 50) + 50))
+    if (settings.answerWaitMax) await wait(Math.floor(Math.random() * (250 - 50) + 50))
     element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 0, detail: 1}))
     element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 0, detail: 1}))
 }
@@ -672,6 +676,7 @@ function getOffset(el) {
 }
 
 function stop() {
+    running = false
     stopRunning = false
     countSaveAnswers = 0
     countAnsweredAnswers = 0
@@ -679,7 +684,7 @@ function stop() {
 }
 
 async function randomWait() {
-    if (simulateUser) await wait(Math.floor(Math.random() * (maxWait - minWait) + minWait))
+    if (settings.clickWaitMax) await wait(Math.floor(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin))
 }
 
 function wait(ms) {
@@ -727,7 +732,6 @@ const observer = new PerformanceObserver((list) => {
 observer.observe({entryTypes: ['resource']})
 
 function highlightAnswers(remove) {
-    console.log('обновлены вопросы')
     if (!remove && (!cachedQuestion || cachedQuestion.question !== normalizeText(document.querySelector('.question-title-text').textContent))) {
         sendQuestion()
         return

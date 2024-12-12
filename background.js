@@ -1,10 +1,13 @@
-import { openDB } from '/libs/idb.js';
+import { openDB, deleteDB } from '/libs/idb.js';
 import { default as objectHash } from '/libs/object-hash.js';
 import { JSDOM } from '/libs/jsdom.js';
 import '/utils.js'
+import '/normalize-text.js'
 
 self.JSDOM = JSDOM // TODO для меньшей нагрузки следует эту реализацию заменить на API chrome.offscreen (ну и говно-код же получится с его использованием)
 self.objectHash = objectHash
+self.openDB = openDB
+self.deleteDB = deleteDB
 
 let db
 let runningTab
@@ -21,6 +24,15 @@ const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
+    const dbCheck = await openDB('check', 1, {upgrade: (db, oldVersion) => firstInit = oldVersion === 0})
+    dbCheck.close()
+    let json
+    if (firstInit) {
+        console.log('первая загрузка, загружаем ответы в базу данных')
+        await deleteDB('check')
+        let response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
+        json = await response.json()
+    }
     db = await openDB('nmo', 12, {upgrade})
     self.db = db  // TODO временно
     async function upgrade(db, oldVersion, newVersion, transaction) {
@@ -33,14 +45,80 @@ async function init() {
             const questions = db.createObjectStore('questions', {autoIncrement: true})
             questions.createIndex('question', 'question', {unique: true})
             questions.createIndex('topics', 'topics', {multiEntry: true})
+            // 1 - просто изменение, 2 - новый ответ
+            questions.createIndex('newChange', 'newChange')
             const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
             topics.createIndex('name', 'name')
             // 0 - не выполнено, 1 - выполнено, 2 - есть ошибки
             topics.createIndex('completed', 'completed')
             topics.createIndex('code', 'code', {unique: true})
             topics.createIndex('id', 'id', {unique: true})
+            topics.createIndex('newChange', 'newChange')
             const other = db.createObjectStore('other')
-            await other.put({mode: 'manual'}, 'settings')
+
+            await other.put({
+                mode: 'manual',
+                clickWaitMin: 500,
+                clickWaitMax: 2000,
+                answerWaitMin: 3000,
+                answerWaitMax: 10000,
+                maxAttemptsNext: 16,
+                maxReloadTab: 7,
+                maxReloadTest: 30
+            }, 'settings')
+
+            const max = json.questions.length + json.topics.length
+            let currentLength = 0
+            let lastPercentage = 0
+
+            for (const question of json.questions) {
+                await questions.add(question)
+
+                currentLength++
+                const percent = (100 * currentLength / max).toFixed(1)
+                if (lastPercentage !== percent) {
+                    lastPercentage = percent;
+                    (async () => {
+                        try {
+                            await chrome.runtime.sendMessage({initializing: lastPercentage})
+                        } catch (ignored) {}
+                    })()
+                }
+            }
+
+            for (const topic of json.topics) {
+                await topics.put(topic)
+
+                currentLength++
+                const percent = (100 * currentLength / max).toFixed(1)
+                if (lastPercentage !== percent) {
+                    lastPercentage = percent;
+                    if (lastPercentage !== 100) {
+                        (async () => {
+                            try {
+                                await chrome.runtime.sendMessage({initializing: lastPercentage})
+                            } catch (ignored) {}
+                        })()
+                    }
+                }
+            }
+
+            await openDB('check', 1)
+            firstInit = false;
+
+            (async () => {
+                try {
+                    await chrome.runtime.sendMessage({initializing: lastPercentage})
+                } catch (ignored) {}
+            })();
+            (async () => {
+                const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
+                for (const tab of tabs) {
+                    if (tab.status === 'complete') {
+                        chrome.scripting.executeScript({files: ['normalize-text.js', 'content-scripts/content-script.js'], target: {tabId: tab.id}})
+                    }
+                }
+            })();
             return
         }
 
@@ -251,42 +329,19 @@ async function init() {
     }
 
     settings = await db.get('other', 'settings')
+    self.settings = settings
 
-    if (firstInit) {
-        console.log('первая загрузка, загружаем ответы в базу данных')
-        let response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
-        let json = await response.json()
-        let transaction = db.transaction('questions', 'readwrite').objectStore('questions')
-        for (const question of json.questions) {
-            await transaction.add(question)
-        }
+    await toggleContentScript()
+    await toggleVisibleScript()
+    await toggleRuleSet()
 
-        transaction = db.transaction('topics', 'readwrite').objectStore('topics')
-        for (const topic of json.topics) {
-            await transaction.put(topic)
-        }
-
-        await reimportEducationElements()
-        firstInit = false
-    }
     console.log('started background!')
 }
 
-self.addEventListener('install', () => {
-    chrome.contextMenus.create({id: 'download', title: 'Скачать базу данных', contexts: ['action']})
-    chrome.contextMenus.onClicked.addListener(async (info) => {
-        if (!initializeFunc.done) {
-            if (firstInit) {
-                showNotification('Подождите', 'Идёт инициализация базы данных, подождите')
-                return
-            } else {
-                await initializeFunc
-            }
-        }
-        if (settings.mode === 'manual' && info.menuItemId === 'download') {
-            chrome.tabs.create({url: 'options/options.html'})
-        }
-    })
+chrome.runtime.onInstalled.addListener(function(details) {
+    if (details.reason === 'install') {
+        chrome.runtime.openOptionsPage()
+    }
 })
 
 self.reimportEducationElements = reimportEducationElements
@@ -363,94 +418,6 @@ async function searchDupQuestions() {
     }
 }
 
-self.joinQuestions = joinQuestions
-async function joinQuestions() {
-    console.log('Объединение баз данных запущено')
-    let response = await fetch(chrome.runtime.getURL('data/nmo_db_new.json'))
-    let json = await response.json()
-    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
-    const oldTopics = {}
-    for (const newTopic of json.topics) {
-        oldTopics[newTopic.key] = newTopic.name
-        const count = await transaction.objectStore('topics').index('name').count(newTopic.name)
-        if (!count) {
-            delete newTopic.key
-            await transaction.objectStore('topics').put(newTopic)
-        }
-    }
-
-    for (const newQuestion of json.questions) {
-        const key = await transaction.objectStore('questions').index('question').getKey(newQuestion.question)
-        if (!key) {
-            for (const [index, oldTopicKey] of newQuestion.topics.entries()) {
-                const topicKey = await transaction.objectStore('topics').index('name').getKey(oldTopics[oldTopicKey])
-                if (topicKey == null) {
-                    console.warn('Проблема при объединении баз данных, не найдена тема', oldTopicKey)
-                    continue
-                }
-                newQuestion.topics[index] = topicKey
-            }
-            console.log('добавлен', newQuestion)
-            await transaction.objectStore('questions').add(newQuestion)
-        } else {
-            let question = await transaction.objectStore('questions').get(key)
-            let changed = false
-            for (const answersHash of Object.keys(newQuestion.answers)) {
-                if (!question.answers[answersHash] || (!question.answers[answersHash].type && newQuestion.answers[answersHash].type)) {
-                    changed = true
-                    question.answers[answersHash] = newQuestion.answers[answersHash]
-                }
-                if (!question.correctAnswers[answersHash] && newQuestion.correctAnswers[answersHash]) {
-                    changed = true
-                    question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
-                }
-            }
-
-            if (newQuestion.answers['unknown']) {
-                if (question.answers['unknown'] == null) question.answers['unknown'] = []
-                for (const answer of newQuestion.answers['unknown']) {
-                    if (!question.answers['unknown'].includes(answer)) {
-                        changed = true
-                        question.answers['unknown'].push(answer)
-                    }
-                }
-            }
-            if (newQuestion.correctAnswers['unknown']) {
-                if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
-                for (const answer of newQuestion.correctAnswers['unknown']) {
-                    if (!question.correctAnswers['unknown'].includes(answer)) {
-                        changed = true
-                        question.correctAnswers['unknown'].push(answer)
-                    }
-                }
-            }
-
-            const topics = []
-            for (const topicKey of question.topics) {
-                const topic = await transaction.objectStore('topics').get(topicKey)
-                topics.push(topic.name)
-            }
-            for (const topicKey of newQuestion.topics) {
-                if (!topics.includes(oldTopics[topicKey])) {
-                    const newTopicKey = await transaction.objectStore('topics').index('name').getKey(oldTopics[topicKey])
-                    if (newTopicKey == null) {
-                        console.warn('Проблема при объединении баз данных, не найдена тема', oldTopics[topicKey], topicKey)
-                        continue
-                    }
-                    changed = true
-                    question.topics.push(newTopicKey)
-                }
-            }
-
-            if (changed) {
-                console.log('обновлён', question)
-                await transaction.objectStore('questions').put(question, key)
-            }
-        }
-    }
-    console.log('Объединение баз данных окончено')
-}
-
 self.getCorrectAnswers = getCorrectAnswers
 async function getCorrectAnswers(topic, index) {
     topic = topic.toLowerCase()
@@ -514,40 +481,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
             (async () => {
                 await initializeFunc
-                const settings = await db.get('other', 'settings')
                 sendResponse({running: runningTab === sender.tab.id, collectAnswers, settings})
             })()
             return true
         }
     } else if (message.reloadPage) {
         if (message.error) {
-            console.warn('Похоже на вкладке где решается тест что-то зависло, сделана перезагрузка вкладки', message.error)
-            reloaded++
-            if (reloaded >= 7) {
-                startFunc = start(runningTab, true, false, true)
-                startFunc.finally(() => startFunc.done = true)
-                showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
-            } else {
-                chrome.tabs.reload(sender.tab.id)
-            }
+            (async () => {
+                await initializeFunc
+                console.warn('Похоже на вкладке где решается тест что-то зависло, сделана перезагрузка вкладки', message.error)
+                reloaded++
+                if (reloaded >= settings.maxReloadTab) {
+                    startFunc = start(runningTab, true, false, true)
+                    startFunc.finally(() => startFunc.done = true)
+                    showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
+                } else {
+                    chrome.tabs.reload(sender.tab.id)
+                }
+            })()
         } else {
             chrome.tabs.reload(sender.tab.id)
         }
+    } else if (message.reloadSettings) {
+        (async () => {
+            await initializeFunc
+            settings = await db.get('other', 'settings')
+        })()
     }
 })
 
 chrome.action.onClicked.addListener(async (tab) => {
     chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
     chrome.action.setBadgeText({text: ''})
-    if (!initializeFunc.done) {
-        if (firstInit) {
-            showNotification('Подождите', 'Идёт инициализация базы данных, подождите')
-            return
-        } else {
-            chrome.action.setTitle({title: 'Идёт запуск инициализация расширения, подождите...'})
-            chrome.action.setBadgeText({text: 'START'})
-            await initializeFunc
-        }
+    if (firstInit) {
+        chrome.runtime.openOptionsPage()
+        return
+    }
+    await initializeFunc
+    if (settings.mode === 'manual' || settings.mode === 'disabled') {
+        chrome.runtime.openOptionsPage()
+        return
     }
     if (runningTab === tab.id || (startFunc && !startFunc.done)) {
         started = 0
@@ -583,7 +556,7 @@ async function start(tabId, hasTest, done, hasError) {
     } else {
         started++
     }
-    if (started >= 30) {
+    if (started >= settings.maxReloadTest) {
         waitUntilState(false)
         started = 0
         showNotification('Ошибка', 'Слишком много попыток запустить тест')
@@ -771,13 +744,18 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         console.warn(educationalElement.name)
         console.warn(foundEE.name)
         educationalElement.error = 'Есть не соответствие в названии, название было изменено'
+        const newTopic = await db.getFromIndex('topics', 'name', foundEE.name)
+        if (newTopic) {
+            console.warn('Найден дублирующий topic, для исправления он был удалён', JSON.stringify(educationalElement))
+            await db.delete('topics', educationalElement.key)
+            educationalElement.key = newTopic.key
+        }
     }
     educationalElement.id = foundEE.id
     educationalElement.name = foundEE.name
     // educationalElement.completed = completed
     // educationalElement.status = status
     educationalElement.code = foundEE.number
-    await fixDupTopics(educationalElement)
     await db.put('topics', educationalElement)
 
     if (foundEE.iomHost?.name) {
@@ -874,7 +852,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     await db.put('topics', topic)
                 }
             } else {
-                topicKey = await db.put('topics', {name: message.question.topics[0]})
+                topicKey = await db.put('topics', {name: message.question.topics[0], newChange: 1})
                 console.log('Внесена новая тема в базу', message.question.topics[0])
                 // TODO временно
                 // await searchOnSites(message.question.topics[0], topicKey)
@@ -926,7 +904,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         console.log('добавлены новые варианты ответов', question)
                     }
                     question.answers[answerHash].lastUsedAnswers = answers
-                    port.postMessage({answers, question})
+                    port.postMessage({answers, question, answerHash})
                 // если найден и вопрос и к нему вариант ответов
                 } else {
                     if (!question.lastOrder) question.lastOrder = {}
@@ -937,7 +915,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
                         console.log('отправлен ответ', question)
-                        port.postMessage({answers: question.correctAnswers[answerHash], question, correct: true})
+                        port.postMessage({answers: question.correctAnswers[answerHash], question, correct: true, answerHash})
                     // если нет правильных ответов, предлагаем рандомный предполагаемый вариант правильного ответа
                     } else {
                         let combination = question.answers[answerHash].combinations?.[Math.floor(Math.random()*question.answers[answerHash].combinations?.length)]
@@ -987,7 +965,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         //     }
                         // }
                         question.answers[answerHash].lastUsedAnswers = answers
-                        port.postMessage({answers, question})
+                        port.postMessage({answers, question, answerHash})
                     }
                 }
                 if (!question.topics.includes(topicKey)) {
@@ -1006,13 +984,14 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.lastOrder = {[question.lastOrder]: answerHash}
                 question.correctAnswers = {}
                 question.topics = [topicKey]
+                question.newChange = 1
                 console.log('добавлен новый вопрос', question)
                 // await searchOnAI(question, answerHash)
                 // if (question.correctAnswers[answerHash]) {
                 //     answers = question.correctAnswers[answerHash]
                 // }
                 question.answers[answerHash].lastUsedAnswers = answers
-                port.postMessage({answers, question})
+                port.postMessage({answers, question, answerHash})
                 await db.put('questions', question)
             }
         // сохранение результатов теста с правильными и не правильными ответами
@@ -1021,7 +1000,7 @@ chrome.runtime.onConnect.addListener((port) => {
             for (const resultQuestion of message.results) {
                 let topicKey = await db.getKeyFromIndex('topics', 'name', resultQuestion.topics[0])
                 if (!topicKey) {
-                    topicKey = await db.put('topics', {name: resultQuestion.topics[0]})
+                    topicKey = await db.put('topics', {name: resultQuestion.topics[0], newChange: 1})
                     console.log('Внесена новая тема в базу', resultQuestion.topics[0])
                     // await searchOnSites(resultQuestion.topics[0], topicKey)
                 }
@@ -1033,7 +1012,8 @@ chrome.runtime.onConnect.addListener((port) => {
                             question: resultQuestion.question,
                             answers: {},
                             topics: [topicKey],
-                            correctAnswers: {'unknown': resultQuestion.answers.answers}
+                            correctAnswers: {'unknown': resultQuestion.answers.answers},
+                            newChange: 2
                         }
                         key = await db.put('questions', correctQuestion)
                         console.log('записан новый ответ с новым вопросом', correctQuestion)
@@ -1047,6 +1027,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     const question = await db.get('questions', key)
                     let changedCombinations = false
                     let changedAnswers = false
+                    let changedOther = false
                     let notAnswered = false
                     const foundAnswerHash = question.lastOrder?.[resultQuestion.lastOrder]
                     // если ответ правильный, сохраняем правильные ответы, и удаляем combinations находя по ответам нужный вариант ответов
@@ -1084,7 +1065,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             if (!question.correctAnswers['unknown']) question.correctAnswers['unknown'] = []
                             question.correctAnswers['unknown'] = Array.from(new Set(question.correctAnswers['unknown'].concat(resultQuestion.answers.answers)))
                             changedAnswers = oldAnswers !== JSON.stringify(question.correctAnswers)
-                            stats.taken++
+                            if (changedAnswers) stats.taken++
                         } else {
                             let fakeCorrectAnswers = false
                             if (question.correctAnswers[matchAnswers[0]]) {
@@ -1213,16 +1194,19 @@ chrome.runtime.onConnect.addListener((port) => {
                         stats.ignored++
                     }
                     if (foundAnswerHash) {
-                        changedCombinations = true
+                        changedOther = true
                         delete question.lastOrder?.[resultQuestion.lastOrder]
                         if (!notAnswered) delete question.answers[foundAnswerHash].lastUsedAnswers
 
                         if (!question.topics.includes(topicKey)) {
+                            changedCombinations = true
                             question.topics.push(topicKey)
                         }
                     }
 
-                    if (changedAnswers || changedCombinations) {
+                    if (changedAnswers || changedCombinations || changedOther) {
+                        if (changedCombinations) question.newChange = 1
+                        if (changedAnswers) question.newChange = 2
                         await db.put('questions', question, key)
                         if (changedAnswers) {
                             console.log('записан или изменён новый ответ', resultQuestion, question)
@@ -1281,38 +1265,6 @@ chrome.runtime.onConnect.addListener((port) => {
 
     self.port = port
 })
-
-self.fixDupTopics = fixDupTopics
-async function fixDupTopics(educationalElement) {
-    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
-    if (educationalElement.name) {
-        let cursor = await transaction.objectStore('topics').index('name').openCursor(educationalElement.name)
-        while (cursor) {
-            if (educationalElement.key !== cursor.value.key) {
-                console.warn('Найден дублирующий topic, для исправления он был удалён', cursor.value)
-                let count = 0
-                let cursor2 = await transaction.objectStore('questions').index('topics').openCursor(cursor.value.key)
-                while(cursor2) {
-                    count++
-                    const question = cursor2.value
-                    question.topics.splice(question.topics.indexOf(cursor.value.key), 1)
-                    if (!question.topics.includes(educationalElement.key)) {
-                        question.topics.push(educationalElement.key)
-                    }
-                    await cursor2.update(question)
-                    // noinspection JSVoidFunctionReturnValueUsed
-                    cursor2 = await cursor2.continue()
-                }
-                if (count) {
-                    console.warn('Key topic\'а был заменён в следующих кол-во тем', count)
-                }
-                await cursor.delete()
-            }
-            // noinspection JSVoidFunctionReturnValueUsed
-            cursor = await cursor.continue()
-        }
-    }
-}
 
 // https://www.kodeclik.com/array-combinations-javascript/
 function getCombinations(items, multi) {
@@ -1395,7 +1347,7 @@ async function searchOnSites(topic, topicKey) {
         await searchOn24forcare(topic, topicKey)
         if (stopRunning) return
         await searchOnReshnmo(topic, topicKey)
-        if (stopRunning) return
+        // if (stopRunning) return
     } finally {
         if (!stopRunning) {
             chrome.action.setTitle({title: 'Расширение решает тест'})
