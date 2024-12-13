@@ -190,7 +190,7 @@ async function restoreOptions() {
     const newAnswers = await db.countFromIndex('questions', 'newChange', 2)
     const newChanges = await db.countFromIndex('questions', 'newChange', 1)
     const newTopics = await db.countFromIndex('topics', 'newChange', 1)
-    document.querySelector('#exportdb .status').innerText = `Кол-во изменений в вашей бд:\nНовых ответов ${newAnswers}\nНовых изменений ${newChanges}\nНовых тем ${newTopics}`
+    document.querySelector('label[for="exportdb"] .status').innerText = `Кол-во изменений в вашей бд:\nНовых ответов ${newAnswers}\nНовых изменений ${newChanges}\nНовых тем ${newTopics}`
 }
 
 chrome.runtime.onMessage.addListener((message) => {

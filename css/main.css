@@ -16,15 +16,39 @@ header {
 	top: 10%;
 }
 
+.nav-head {
+	letter-spacing: .5px;
+	text-align: center;
+	width: 230px;
+	font-size: 20px;
+	text-transform: uppercase;
+	font-weight: lighter;
+	padding-bottom: 7px;
+	color: #212121;
+	border-bottom: 2px solid #212121;
+	margin: 130px auto 0;
+}
+
+.description {
+	font-size: 14px;
+	font-style: italic;
+}
+
+.description::before {
+	content: "▶️ ";
+}
+
 .export-import {
 	display: flex;
 	width: fit-content;
 	justify-self: center;
 }
 
-.export-import > button {
+.export-import > label {
+	justify-content: center;
+	box-shadow: 0 6px 8px 0 rgba(34, 60, 80, 0.1);
 	position: relative;
-	width: 250px;
+	width: 220px;
 	cursor: pointer;
 	box-sizing: content-box;
 	outline: none;
@@ -36,9 +60,14 @@ header {
 	background: #ccdbfd;
 	border-bottom-left-radius: 10px;
 	border-bottom-right-radius: 10px;
+	font-size: 14px;
 }
 
-.export-import > button > .status {
+.export-import > label + input {
+	display: none;
+}
+
+.export-import > label > .status {
 	position: absolute;
 	top: 50px;
 	left: 0;
@@ -46,19 +75,36 @@ header {
 	text-align: left;
 	padding: 0 10px;
 	width: 100%;
+	pointer-events: none;
 }
 
-.export-import > button > div {
+.export-import > label > div {
 	font-weight: 600;
 	margin: auto 0 auto 10px;
 }
 
-.export-import > button > img {
+.export-import > label > img {
 	margin: auto 0;
 }
 
+#telegram {
+	position: absolute;
+	right: 10px;
+	bottom: 10px;
+	transition: .3s;
+}
+
+#telegram:hover {
+	opacity: .9;
+}
+
+#telegram img {
+	width: 50px;
+	height: 50px;
+}
+
 nav {
-	margin-top: 130px;
+	margin-top: 10px;
 	width: 100%;
 	display: grid;
 	gap: 20px;
@@ -68,43 +114,51 @@ nav {
 }
 
 nav > button {
-	width: 170px;
-	border: none;
+	text-transform: uppercase;
+	font-size: 12px;
+	letter-spacing: .5px;
+	box-shadow: 0 6px 8px 0 rgba(34, 60, 80, 0.1);
+	width: 180px;
+	font-weight: bold;
 	border-radius: 7px;
-	padding: 8px;
-	font-weight: 600;
+	padding: 8px 4px;
 	background: #b6ccfe;
 	outline: none;
 	cursor: pointer;
 	transition: .3s;
+	border: solid 2px #b6ccfe;
 }
 
 nav > button:hover {
+	border: solid 2px #1ccc20;
 	background: #97e4af;
 	opacity: .8;
 }
 
 nav > button.active {
+	border: solid 2px #97e4af !important;
 	background: #97e4af;
 	opacity: 1 !important;
 }
 
 nav > button:hover[data-block="disabled"] {
+	border: solid 2px #c83917;
 	background: #f08080;
 }
 
 nav > button.active[data-block="disabled"] {
+	border: solid 2px #f08080 !important;
 	background: #f08080;
 }
 
 main .block {
 	padding: 10px 30px;
-	/* text-align: center; */
+	box-shadow: 0 6px 8px 0 rgba(34, 60, 80, 0.1);
 	display: none;
 	width: 800px;
 	margin: 0 auto;
 	background: #d7e3fc;
-	border-radius: 15px;
+	border-radius: 10px;
 }
 
 main .block.active {
@@ -149,7 +203,7 @@ select[disabled="disabled"] {
 .input-block input,
 .input-block select {
 	display: block;
-	/* min-width: 150px; */
+	width: 70px;
 	text-align: left;
 	box-sizing: border-box;
 	outline: none;
@@ -158,6 +212,10 @@ select[disabled="disabled"] {
 	border: none;
 	padding: 5px;
 	transition: .3s;
+}
+
+.input-block input + input {
+	margin-left: 5px;
 }
 
 fieldset {
