@@ -1,6 +1,3 @@
-let simulateUser = false
-let goodScore = false
-
 let hasGoodScore = false
 let port
 let stopRunning = false
@@ -13,26 +10,7 @@ let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, sentResults
 
 let settings
 
-let highLightDiv, statusBody
-if (document.location.href.includes('/quiz-wrapper/')) {
-    const shadowRoot = document.body.attachShadow({mode: 'closed'})
-    shadowRoot.append(document.createElement('slot'))
-    highLightDiv = document.createElement('div')
-    shadowRoot.prepend(highLightDiv)
-    const statusDiv = document.createElement('div')
-    statusDiv.style.bottom = '0'
-    statusDiv.style.left = '0'
-    statusDiv.style.position = 'fixed'
-    statusDiv.style.padding = '1em'
-    statusDiv.style.zIndex = '2147483647'
-    const statusTittle = document.createElement('div')
-    statusTittle.textContent = 'НМО Решатель'
-    statusTittle.style.textAlign = 'center'
-    statusDiv.append(statusTittle)
-    statusBody = document.createElement('div')
-    statusDiv.append(statusBody)
-    shadowRoot.prepend(statusDiv)
-}
+let shadowRoot, highLightDiv, statusDiv, statusBody, observerAll, observerResize
 
 
 function osReceiveStatus(message) {
@@ -48,9 +26,6 @@ function osReceiveStatus(message) {
     if (message.settings) {
         settings = message.settings
         listenQuestions()
-        if (document.querySelector('.questionList')) {
-            sendResults()
-        }
     }
 }
 chrome.runtime.sendMessage({
@@ -90,11 +65,6 @@ async function portListener(message) {
                 cachedAnswerHash = message.answerHash
                 if (document.querySelector('.question-inner-html-text')) {
                     highlightAnswers()
-                    if (cachedCorrect) {
-                        statusBody.innerText = 'Подсвечены правильные ответы'
-                    } else {
-                        statusBody.innerText = 'Подсвечены предполагаемые ответы\n(методом подбора)\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
-                    }
                 }
             } else {
                 statusBody.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
@@ -107,7 +77,7 @@ async function portListener(message) {
     await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"])')
 
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
-    if ((simulateUser || !goodScore) && topic.includes(' - Предварительное тестирование') || topic.includes(' - Входное тестирование')) {
+    if (!settings.goodScore && topic.includes(' - Предварительное тестирование') || topic.includes(' - Входное тестирование')) {
         // сразу нажимаем "Завершить тестирование"
         await simulateClick(document.querySelector('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])'))
         await randomWait()
@@ -737,7 +707,10 @@ function highlightAnswers(remove) {
         return
     }
     highLightDiv.replaceChildren()
-    if (remove || !cachedAnswers) return
+    if (remove || !cachedAnswers) {
+        if (remove) statusBody.innerText = 'Подсвечены правильные ответы'
+        return
+    }
     for (const el of document.querySelectorAll('.question-inner-html-text')) {
         const formField = el.closest('.mdc-form-field')
         if (formField.querySelector('input:disabled')) return
@@ -749,11 +722,32 @@ function highlightAnswers(remove) {
             }
         }
     }
+    if (cachedCorrect) {
+        statusBody.innerText = 'Подсвечены правильные ответы'
+    } else {
+        statusBody.innerText = 'Подсвечены предполагаемые ответы\n(методом подбора)\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+    }
 }
 
 function listenQuestions() {
-    if (settings.mode === 'manual') {
+    if (!document.location.href.includes('/quiz-wrapper/') || running) {
+        if (statusDiv?.childElementCount) {
+            statusDiv.replaceChildren()
+            statusBody = null
+            sentResults = false
+            highLightDiv.replaceChildren()
+            observerAll.disconnect()
+            observerResize.disconnect()
+        }
+        return
+    }
+    if (settings.mode === 'manual' && !statusDiv?.childElementCount) {
+        addShadowRoot()
+        if (document.querySelector('.questionList')) {
+            sendResults()
+        }
         function onChanged() {
+            if (settings.mode !== 'manual' || !statusDiv?.childElementCount) return
             if (document.querySelector('.question-inner-html-text')) {
                 highlightAnswers()
             } else if (cachedQuestion) {
@@ -767,10 +761,65 @@ function listenQuestions() {
             }
         }
 
-        const observer = new MutationObserver(onChanged)
-        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
+        observerAll = new MutationObserver(onChanged)
+        observerAll.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
 
-        const resizeObserver = new ResizeObserver(onChanged)
-        resizeObserver.observe(document.documentElement)
+        observerResize = new ResizeObserver(onChanged)
+        observerResize.observe(document.documentElement)
+    } else if (settings.mode !== 'manual' && statusDiv?.childElementCount) {
+        statusDiv.replaceChildren()
+        statusBody = null
+        sentResults = false
+        highLightDiv.replaceChildren()
+        observerAll.disconnect()
+        observerResize.disconnect()
     }
+}
+
+function addShadowRoot() {
+    if (!shadowRoot) {
+        shadowRoot = document.body.attachShadow({mode: 'closed'})
+        shadowRoot.append(document.createElement('slot'))
+    }
+    if (!highLightDiv) {
+        highLightDiv = document.createElement('div')
+        shadowRoot.prepend(highLightDiv)
+    }
+    if (!statusDiv) {
+        statusDiv = document.createElement('div')
+        shadowRoot.prepend(statusDiv)
+    }
+    const div = document.createElement('div')
+    div.style.padding = '10px'
+    div.style.width = '300px'
+    div.style.height = '100px'
+    div.style.position = 'fixed'
+    div.style.bottom = '10px'
+    div.style.left = '10px'
+    div.style.borderRadius = '15px'
+    div.style.color = 'black'
+    div.style.background = '#ffffff'
+    div.style.boxShadow = '0 6px 8px 0 rgba(34, 60, 80, 0.1)'
+    div.style.zIndex = '2147483647'
+    div.style.pointerEvents = 'none'
+    div.style.lineHeight = '1'
+    div.style.margin = '0'
+    const headerH1 = document.createElement('h1')
+    headerH1.style.justifySelf = 'center'
+    headerH1.style.textAlign = 'center'
+    headerH1.style.width = '150px'
+    headerH1.style.fontWeight = 'lighter'
+    headerH1.style.fontSize = '16px'
+    headerH1.style.borderBottom = 'solid 2px #212121'
+    headerH1.style.marginBottom = '10px'
+    headerH1.style.padding = '3px'
+    headerH1.style.marginTop = '0'
+    headerH1.textContent = '🧊 НМО Решатель'
+    div.append(headerH1)
+    statusBody = document.createElement('div')
+    statusBody.style.fontSize = '14px'
+    statusBody.style.textAlign = 'center'
+    statusBody.style.margin = '0'
+    div.append(statusBody)
+    statusDiv.append(div)
 }

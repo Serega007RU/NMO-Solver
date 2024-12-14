@@ -30,7 +30,7 @@ async function init() {
     if (firstInit) {
         console.log('первая загрузка, загружаем ответы в базу данных')
         await deleteDB('check')
-        let response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
+        const response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
         json = await response.json()
     }
     db = await openDB('nmo', 12, {upgrade})
@@ -64,12 +64,13 @@ async function init() {
                 answerWaitMax: 10000,
                 maxAttemptsNext: 16,
                 maxReloadTab: 7,
-                maxReloadTest: 30
+                maxReloadTest: 30,
+                goodScore: false
             }, 'settings')
 
             const max = json.questions.length + json.topics.length
             let currentLength = 0
-            let lastPercentage = 0
+            let lastPercentage = ''
 
             for (const question of json.questions) {
                 await questions.add(question)
@@ -93,7 +94,7 @@ async function init() {
                 const percent = (100 * currentLength / max).toFixed(1)
                 if (lastPercentage !== percent) {
                     lastPercentage = percent;
-                    if (lastPercentage !== 100) {
+                    if (lastPercentage !== '100.0') {
                         (async () => {
                             try {
                                 await chrome.runtime.sendMessage({initializing: lastPercentage})

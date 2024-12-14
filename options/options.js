@@ -27,12 +27,14 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     //Загрузка переключателей
     const nav_btns = document.querySelectorAll('nav button')
     const blocks = document.querySelectorAll('div.block')
+    let timer
     nav_btns.forEach((el)=> {
         el.addEventListener('click', () => {
             const mode = el.getAttribute('data-block')
             if (mode === 'auto') {
                 el.textContent = 'В разработке'
-                setTimeout(() => {
+                clearTimeout(timer)
+                timer = setTimeout(() => {
                     el.textContent = 'Автоматический'
                 }, 3000)
                 return
@@ -60,7 +62,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         })
     })
 
-    const exportDbStatus = document.querySelector('#exportdb .status')
+    const exportDbStatus = document.querySelector('label[for="exportdb"] .status')
     let exporting = false
     document.querySelector('#exportdb').addEventListener('click', async () => {
         if (exporting) return
@@ -90,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         }
     })
 
-    const importDbStatus = document.querySelector('#importdb .status')
+    const importDbStatus = document.querySelector('label[for="importdb"] .status')
     let importing = false
     document.querySelector('#importdb').addEventListener('change', async (event) => {
         if (importing) return
@@ -158,6 +160,10 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             onChangedSettings()
         }
     })
+    document.querySelector('#GoodScore').addEventListener('change', (event) => {
+        settings.goodScore = event.target.checked
+        onChangedSettings()
+    })
 })
 
 async function restoreOptions() {
@@ -186,6 +192,10 @@ async function restoreOptions() {
     document.querySelector('#MaxAttemptsNext').value = settings.maxAttemptsNext
     document.querySelector('#MaxReloadTab').value = settings.maxReloadTab
     document.querySelector('#MaxReloadTest').value = settings.maxReloadTest
+    document.querySelector('#GoodScore').checked = settings.goodScore
+    if (settings.goodScore) {
+        document.querySelector('#GoodScore').parentElement.removeAttribute('style')
+    }
 
     const newAnswers = await db.countFromIndex('questions', 'newChange', 2)
     const newChanges = await db.countFromIndex('questions', 'newChange', 1)
