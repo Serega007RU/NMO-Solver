@@ -20,6 +20,8 @@ let startFunc
 let settings
 
 let firstInit = false
+const initStage = {stage1: {current: 0, max: 0, percent: '0'}, stage2: {current: 0, max: 0, percent: '0'}, stage3: {current: 0, max: 0, percent: '0'}}
+let lastSend
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -30,11 +32,23 @@ async function init() {
     if (firstInit) {
         console.log('первая загрузка, загружаем ответы в базу данных')
         await deleteDB('check')
+        initStage.stage1 = {current: 0, max: 1, percent: 0}
+        sendStage()
         const response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
         json = await response.json()
+        initStage.stage1.current = 1
+        sendStage()
     }
     db = await openDB('nmo', 12, {upgrade})
-    self.db = db  // TODO временно
+    // TODO если бд инициализировалась но в ней нет никаких данных, значит это не успешная инициализация, пробуем её переинициализировать
+    if (firstInit) {
+        console.warn('Похоже бд не успешно инициализировалась, делаем это повторно')
+        db.close()
+        await deleteDB('nmo')
+        db = await openDB('nmo', 12, {upgrade})
+    }
+    json = null
+    self.db = db
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
             console.log('Обновление базы данных с версии ' + oldVersion + ' на ' + newVersion)
@@ -69,49 +83,45 @@ async function init() {
             }, 'settings')
 
             const max = json.questions.length + json.topics.length
-            let currentLength = 0
-            let lastPercentage = ''
+            initStage.stage2 = {current: 0, max, percent: '0'}
+            initStage.stage3 = {current: 0, max, percent: '0'}
+            sendStage()
+            const promises = []
+            function onComplete() {
+                initStage.stage3.current += 1
+                sendStage()
+            }
 
             for (const question of json.questions) {
-                await questions.add(question)
-
-                currentLength++
-                const percent = (100 * currentLength / max).toFixed(1)
-                if (lastPercentage !== percent) {
-                    lastPercentage = percent;
-                    (async () => {
-                        try {
-                            await chrome.runtime.sendMessage({initializing: lastPercentage})
-                        } catch (ignored) {}
-                    })()
+                const promise = questions.add(question)
+                promises.push(promise)
+                promise.finally(onComplete)
+                initStage.stage2.current += 1
+                if (initStage.stage2.current % 10000 === 0) {
+                    // TODO таким вот тупорылым костылём мы избавляемся от провисания и дальнейшего схлопывания фонового процесса из-за ограничения по lifetime Serice Worker
+                    //  waitUntil даже не помогает, всё из-за провисания
+                    await questions.get(0)
                 }
+                sendStage()
             }
 
             for (const topic of json.topics) {
-                await topics.put(topic)
-
-                currentLength++
-                const percent = (100 * currentLength / max).toFixed(1)
-                if (lastPercentage !== percent) {
-                    lastPercentage = percent;
-                    if (lastPercentage !== '100.0') {
-                        (async () => {
-                            try {
-                                await chrome.runtime.sendMessage({initializing: lastPercentage})
-                            } catch (ignored) {}
-                        })()
-                    }
+                topics.put(topic)
+                const promise = topics.put(topic)
+                promises.push(promise)
+                promise.finally(onComplete)
+                initStage.stage2.current += 1
+                if (initStage.stage2.current % 10000 === 0) {
+                    await questions.get(0)
                 }
+                sendStage()
             }
 
-            await openDB('check', 1)
+            await Promise.all(promises)
+
+            openDB('check', 1)
             firstInit = false;
 
-            (async () => {
-                try {
-                    await chrome.runtime.sendMessage({initializing: lastPercentage})
-                } catch (ignored) {}
-            })();
             (async () => {
                 const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
                 for (const tab of tabs) {
@@ -123,211 +133,10 @@ async function init() {
             return
         }
 
-        if (oldVersion <= 8) {
-            console.log('Этап обновления с версии 8 на 9')
-            let cursor = await transaction.objectStore('questions').openCursor()
-            while (cursor) {
-                const question = cursor.value
-                if (question.topic) {
-                    let topic = question.topic
-                    topic = topic.replaceAll(' - Итоговое тестирование', '').replaceAll(' - Предварительное тестирование', '').replaceAll(' - Входное тестирование', '')
-                    if (topic.startsWith('Тест с ответами по теме «')) {
-                        topic = topic.replaceAll('Тест с ответами по теме «', '')
-                        topic = topic.slice(0, -1)
-                    }
-                    question.topics = [topic]
-                    delete question.topic
-                } else {
-                    question.topics = []
-                }
-                await cursor.update(question)
-                // noinspection JSVoidFunctionReturnValueUsed
-                cursor = await cursor.continue()
-            }
-        }
-
-        if (oldVersion <= 9) {
-            console.log('Этап обновления с версии 9 на 10')
-
-            let cursor = await transaction.objectStore('questions').openCursor()
-            while (cursor) {
-                const question = cursor.value
-                if (question.topics.length) {
-                    let changed = false
-                    for (const [index, topic] of question.topics.entries()) {
-                        if (typeof topic === 'string') {
-                            console.warn('Исправлена ошибка с topic', question)
-                            changed = true
-                            let key = await transaction.objectStore('topics').index('name').getKey(topic)
-                            if (key == null) {
-                                key = await transaction.objectStore('topics').put({name: topic})
-                            }
-                            question.topics[index] = key
-                        }
-                    }
-                    if (changed) {
-                        await cursor.update(question)
-                    }
-                }
-                // noinspection JSVoidFunctionReturnValueUsed
-                cursor = await cursor.continue()
-            }
-        }
-
-        if (oldVersion <= 10) {
-            console.log('Этап обновления с версии 10 на 11')
-            let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
-            while (cursor) {
-                const question = cursor.value
-
-                question.question = normalizeText(question.question)
-
-                for (const answerHash of Object.keys(question.answers)) {
-                    const newAnswers = []
-                    for (const answer of question.answers[answerHash].answers) {
-                        newAnswers.push(normalizeText(answer))
-                    }
-                    newAnswers.sort()
-                    const newAnswer = question.answers[answerHash]
-                    const newAnswerHash = objectHash(newAnswers)
-
-                    const oldQuestion = JSON.stringify(question)
-                    delete question.answers[answerHash]
-                    // TODO мы удаляем комбинации так как меняется сортировка вопросов из-за разного регистра букв
-                    delete newAnswer.combinations
-                    if (question.answers[newAnswerHash]) {
-                        console.warn('Найдены дублирующиеся ответы', oldQuestion, question)
-                    }
-
-                    newAnswer.answers = newAnswers
-                    question.answers[newAnswerHash] = newAnswer
-
-                    if (question.correctAnswers[answerHash]) {
-                        const newCorrectAnswers = []
-                        for (const answer of question.correctAnswers[answerHash]) {
-                            newCorrectAnswers.push(normalizeText(answer))
-                        }
-                        newCorrectAnswers.sort()
-                        delete question.correctAnswers[answerHash]
-                        question.correctAnswers[newAnswerHash] = newCorrectAnswers
-                    }
-                }
-
-                await cursor.update(question)
-
-                // noinspection JSVoidFunctionReturnValueUsed
-                cursor = await cursor.continue()
-            }
-
-            let cursor2 = await transaction.objectStore('topics', 'readwrite').openCursor()
-            while (cursor2) {
-                const topic = cursor2.value
-                topic.name = normalizeText(topic.name)
-                await cursor2.update(topic)
-                // noinspection JSVoidFunctionReturnValueUsed
-                cursor2 = await cursor2.continue()
-            }
-        }
-
-        if (oldVersion <= 11) {
-            console.log('Этап обновления с версии 11 на 12')
-            let cursor = await transaction.objectStore('questions', 'readwrite').openCursor()
-            while (cursor) {
-                const count = await transaction.objectStore('questions').index('question').count(cursor.value.question)
-                if (count > 1) {
-                    // console.warn('Найден дубликат', cursor.value)
-                    let cursor2 = await transaction.objectStore('questions', 'readwrite').index('question').openCursor(cursor.value.question)
-                    const question = cursor2.value
-                    // noinspection JSVoidFunctionReturnValueUsed
-                    cursor2 = await cursor2.continue()
-                    let changed = false
-                    while (cursor2) {
-                        for (const answersHash of Object.keys(cursor2.value.answers)) {
-                            if (!question.answers[answersHash] || (!question.answers[answersHash].type && cursor2.value.answers[answersHash].type)) {
-                                changed = true
-                                question.answers[answersHash] = cursor2.value.answers[answersHash]
-                            }
-                            if (!question.correctAnswers[answersHash] && cursor2.value.correctAnswers[answersHash]) {
-                                changed = true
-                                question.correctAnswers[answersHash] = cursor2.value.correctAnswers[answersHash]
-                            }
-                        }
-
-                        if (cursor2.value.answers['unknown']) {
-                            if (question.answers['unknown'] == null) question.answers['unknown'] = []
-                            for (const answer of cursor2.value.answers['unknown']) {
-                                if (!question.answers['unknown'].includes(answer)) {
-                                    changed = true
-                                    question.answers['unknown'].push(answer)
-                                }
-                            }
-                        }
-                        if (cursor2.value.correctAnswers['unknown']) {
-                            if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
-                            for (const answer of cursor2.value.correctAnswers['unknown']) {
-                                if (!question.correctAnswers['unknown'].includes(answer)) {
-                                    changed = true
-                                    question.correctAnswers['unknown'].push(answer)
-                                }
-                            }
-                        }
-
-                        for (const topic of cursor2.value.topics) {
-                            if (!question.topics.includes(topic)) {
-                                changed = true
-                                question.topics.push(topic)
-                            }
-                        }
-
-                        // console.warn('Удалено', cursor2.value)
-                        await cursor2.delete()
-
-                        // noinspection JSVoidFunctionReturnValueUsed
-                        cursor2 = await cursor2.continue()
-                    }
-                    if (changed) {
-                        console.warn('Дубликат объединён в', question)
-                        await cursor.update(question)
-                    }
-                }
-                // noinspection JSVoidFunctionReturnValueUsed
-                cursor = await cursor.continue()
-            }
-
-            let cursor2 = await transaction.objectStore('topics', 'readwrite').openCursor()
-            while (cursor2) {
-                let cursor3 = await transaction.objectStore('topics').index('name').openCursor(cursor2.value.name)
-                while (cursor3) {
-                    if (cursor2.value.key !== cursor3.value.key) {
-                        console.warn('Найден дублирующий topic, для исправления он был удалён', cursor3.value)
-                        let count = 0
-                        let cursor4 = await transaction.objectStore('questions').index('topics').openCursor(cursor3.value.key)
-                        while(cursor4) {
-                            count++
-                            const question = cursor4.value
-                            question.topics.splice(question.topics.indexOf(cursor3.value.key), 1)
-                            if (!question.topics.includes(cursor2.value.key)) {
-                                question.topics.push(cursor2.value.key)
-                            }
-                            await cursor4.update(question)
-                            // noinspection JSVoidFunctionReturnValueUsed
-                            cursor4 = await cursor4.continue()
-                        }
-                        if (count) {
-                            console.warn('Key topic\'а был заменён в следующих кол-во тем', count)
-                        }
-                        await cursor3.delete()
-                    }
-                    // noinspection JSVoidFunctionReturnValueUsed
-                    cursor3 = await cursor3.continue()
-                }
-                // noinspection JSVoidFunctionReturnValueUsed
-                cursor2 = await cursor2.continue()
-            }
-        }
-
         console.log('Обновление базы данных завершено')
     }
+
+    firstInit = false
 
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -464,6 +273,26 @@ async function getCorrectAnswers(topic, index) {
         cursor = await cursor.continue()
     }
     return text
+}
+
+function sendStage() {
+    let changed
+    for (let x=1; x<=3; x++) {
+        const stage = initStage['stage' + x]
+        const percent = (100 * stage.current / stage.max) | 0
+        if (stage.percent !== percent) {
+            initStage['stage' + x].percent = percent
+            changed = percent
+        }
+    }
+    if (changed === 100 || (changed && Date.now() - lastSend >= 1000)) {
+        lastSend = Date.now();
+        (async () => {
+            try {
+                await chrome.runtime.sendMessage({initStage})
+            } catch (ignored) {}
+        })()
+    }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1566,10 +1395,6 @@ function showNotification(title, message) {
     console.log(title, message)
     chrome.action.setTitle({title: message})
     chrome.notifications.create({type: 'basic', message, title, iconUrl: 'icon.png'})
-}
-
-function wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // тупорылый костыль (официально одобренный самим гуглом) на то что б Service Worker не отключался во время выполнения кода

@@ -65,3 +65,8 @@ async function toggleRuleSet() {
     }
 }
 self.toggleRuleSet = toggleRuleSet
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+self.wait = wait

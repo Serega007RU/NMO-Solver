@@ -1,14 +1,16 @@
-import { openDB } from '/libs/idb.js';
+import * as idb from '/libs/idb.js'
+self.idb = idb
 
 let db, settings, resolveInit
 async function init() {
     // noinspection JSVoidFunctionReturnValueUsed
     const response = await chrome.runtime.sendMessage({status: true})
     if (response.initializing) {
-        initializing(0)
+        document.querySelector('#LoadingText').style.display = 'none'
+        document.querySelector('#initializing').removeAttribute('style')
         await new Promise(resolve => resolveInit = resolve)
     }
-    db = await openDB('nmo', 12)
+    db = await idb.openDB('nmo', 12)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -16,6 +18,7 @@ async function init() {
     document.querySelector('.loading').style.display = 'none'
     document.querySelector('.main').removeAttribute('style')
     if (response.initializing) {
+        await wait(500)
         alert('Расширение успешно прошёл инициализацию, можете открывать тесты')
     }
 }
@@ -204,20 +207,22 @@ async function restoreOptions() {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-    if (message.initializing !== null) {
-        if (message.initializing === '100.0') {
-            if (resolveInit) resolveInit()
-        } else {
-            initializing(message.initializing)
+    if (message.initStage) {
+        document.querySelector('#LoadingText').style.display = 'none'
+        document.querySelector('#initializing').removeAttribute('style')
+        const initStage = message.initStage
+        console.log(initStage)
+        document.querySelector('#percent1').innerText = `Прогресс ${initStage.stage1.percent}%`
+        document.querySelector('#progress1').innerText = `Загружено ${initStage.stage1.current.toLocaleString('ru')}/${initStage.stage1.max.toLocaleString('ru')}`
+        document.querySelector('#percent2').innerText = `Прогресс ${initStage.stage2.percent}%`
+        document.querySelector('#progress2').innerText = `Загружено ${initStage.stage2.current.toLocaleString('ru')}/${initStage.stage2.max.toLocaleString('ru')}`
+        document.querySelector('#percent3').innerText = `Прогресс ${initStage.stage3.percent}%`
+        document.querySelector('#progress3').innerText = `Загружено ${initStage.stage3.current.toLocaleString('ru')}/${initStage.stage3.max.toLocaleString('ru')}`
+        if (initStage.stage3.current && initStage.stage3.current === initStage.stage3.max) {
+            resolveInit()
         }
     }
 })
-
-function initializing(percent) {
-    let text = 'Идёт инициализация\nлокальной базы данных расширения\nпожалуйста подождите\nэто может занять около 5-ти минут\n\n'
-    if (percent) text += 'загружено ' + percent + '%'
-    document.querySelector('#LoadingText').innerText = text
-}
 
 async function onChangedSettings() {
     await db.put('other', settings, 'settings')
