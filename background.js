@@ -1394,7 +1394,7 @@ async function joinAnswers(topicKey, questionText, answers, correctAnswers) {
 function showNotification(title, message) {
     console.log(title, message)
     chrome.action.setTitle({title: message})
-    chrome.notifications.create({type: 'basic', message, title, iconUrl: 'icon.png'})
+    chrome.notifications.create({type: 'basic', message, title, iconUrl: 'img/icon128.png'})
 }
 
 // тупорылый костыль (официально одобренный самим гуглом) на то что б Service Worker не отключался во время выполнения кода
