@@ -17,8 +17,8 @@ function osReceiveStatus(message) {
     if (message.running) {
         stopRunning = false
         nextRepeat = 0
-        start(message.collectAnswers)
         running = true
+        start(message.collectAnswers)
     }
     if (message.initializing && statusBody) {
         statusBody.innerText = 'Подождите\nИдёт инициализация\nлокальной базы данных\nэто может занять\nоколо 5-ти минут'
@@ -39,6 +39,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         if (stopRunning) {
             chrome.runtime.sendMessage({reloadPage: true})
         } else {
+            stopRunning = false
             nextRepeat = 0
             running = true
             start()
@@ -56,8 +57,8 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 })
 
 async function portListener(message) {
-    if (settings.mode === 'manual' || !running) {
-        if (statusBody) {
+    if (settings.mode === 'manual') {
+        if (statusBody && !running) {
             if (message.answers) {
                 cachedAnswers = message.answers
                 cachedQuestion = message.question
@@ -257,7 +258,7 @@ async function start(collectAnswers) {
 
     if (document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Скачать сертификат' || document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Ожидание выгрузки результатов...') {
         // await watchForText('.v-align-center .v-button-caption', 'Скачать сертификат')
-        if (goodScore && !hasGoodScore) {
+        if (settings.goodScore && !hasGoodScore) {
             // TODO иногда кнопка Далее активна и есть страница дальше даже после страницы получения сертификата
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
             await watchForElement('.c-table-clickable-cell')
@@ -317,7 +318,7 @@ async function start(collectAnswers) {
                 return
             } else if (testName === 'Предварительное тестирование' || testName === 'Входное тестирование') {
                 hasSuccessTest = true
-            } else if (goodScore) {
+            } else if (settings.goodScore) {
                 if (variantText.includes('оценка 3')) {
                     countGood += 1
                 } else if (variantText.includes('оценка 4')) {
