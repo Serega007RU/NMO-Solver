@@ -70,19 +70,14 @@
 <!--            <br>-->
 <!--            Обращаем внимание, что использование этого режима технически порталом может быть обнаружено (нарушение пункта 6.3.1 пользовательского соглашения портала).-->
             <br><br>
-            <div class="toggle-pill-color" style="display: none">
-                <input type="checkbox" id="GoodScore" name="GoodScore">
-                <label for="GoodScore"></label>
-                <div class="label">Решать тесты на 5-ку (методом подбора)</div>
-            </div>
             <div class="input-block">
-                <input type="number" id="ClickWaitMin" name="ClickWait" min="0" max="999" step="0.1" placeholder="мин">
-                <input type="number" id="ClickWaitMax" name="ClickWait" min="0" max="999" step="0.1" placeholder="макс">
+                <input type="number" id="ClickWaitMin" name="ClickWaitMin" min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="ClickWaitMax" name="ClickWaitMax" min="0" max="999" step="0.1" placeholder="макс">
                 <label for="ClickWaitMin">Задержка между нажатиями (миним. и макс. в секундах)</label>
             </div>
             <div class="input-block">
-                <input type="number" id="AnswerWaitMin" name="AnswerWait" min="0" max="999" step="0.1" placeholder="мин">
-                <input type="number" id="AnswerWaitMax" name="AnswerWait" min="0" max="999" step="0.1" placeholder="макс">
+                <input type="number" id="AnswerWaitMin" name="AnswerWaitMin" min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="AnswerWaitMax" name="AnswerWaitMax" min="0" max="999" step="0.1" placeholder="макс">
                 <label for="AnswerWaitMin">Сколько времени думать над вопросом (миним. и макс. в секундах)</label>
             </div>
             <div class="input-block">
@@ -94,8 +89,18 @@
                 <label for="MaxReloadTab">Максимальное кол-во попыток перезагрузки вкладки</label>
             </div>
             <div class="input-block">
-                <input type="number" id="MaxReloadTest" name="MaxReloadTab" min="0" max="999" step="1" placeholder="кол-во">
+                <input type="number" id="TimeoutReloadTabMin" name="TimeOutReloadTab" min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="TimeoutReloadTabMax" name="TimeOutReloadTab" min="0" max="999" step="0.1" placeholder="макс">
+                <label for="TimeoutReloadTabMin">Время ожидания действия до перезагрузки вкладки (миним. и макс. в секундах)</label>
+            </div>
+            <div class="input-block">
+                <input type="number" id="MaxReloadTest" name="MaxReloadTest" min="0" max="999" step="1" placeholder="кол-во">
                 <label for="MaxReloadTest">Максимальное кол-во попыток перезапуска теста</label>
+            </div>
+            <div class="toggle-pill-color">
+                <input type="checkbox" id="GoodScore" name="GoodScore">
+                <label for="GoodScore"></label>
+                <div class="label">Решать тесты на 5-ку (методом подбора)</div>
             </div>
         </div>
         <div class="block" data-block="auto">

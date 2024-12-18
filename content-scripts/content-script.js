@@ -492,8 +492,7 @@ function watchForElement(selector, reverse) {
 
         let timer = setTimeout(() => {
             chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания'})
-        // }, Math.floor(Math.random() * (30000 - 15000) + 15000))
-        }, Math.floor(Math.random() * (60000 - 30000) + 30000))
+        }, Math.floor(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin))
 
         rejectWait = () => {
             stop()
@@ -527,8 +526,7 @@ function watchForText(selector, text, reverse) {
 
         let timer = setTimeout(() => {
             chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания'})
-        // }, Math.floor(Math.random() * (30000 - 15000) + 15000))
-        }, Math.floor(Math.random() * (60000 - 30000) + 30000))
+        }, Math.floor(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin))
 
         rejectWait = () => {
             stop()

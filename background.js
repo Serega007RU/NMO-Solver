@@ -39,13 +39,13 @@ async function init() {
         initStage.stage1.current = 1
         sendStage()
     }
-    db = await openDB('nmo', 12, {upgrade})
+    db = await openDB('nmo', 13, {upgrade})
     // TODO если бд инициализировалась но в ней нет никаких данных, значит это не успешная инициализация, пробуем её переинициализировать
     if (firstInit) {
         console.warn('Похоже бд не успешно инициализировалась, делаем это повторно')
         db.close()
         await deleteDB('nmo')
-        db = await openDB('nmo', 12, {upgrade})
+        db = await openDB('nmo', 13, {upgrade})
     }
     json = null
     self.db = db
@@ -79,7 +79,9 @@ async function init() {
                 maxAttemptsNext: 16,
                 maxReloadTab: 7,
                 maxReloadTest: 30,
-                goodScore: false
+                goodScore: false,
+                timeoutReloadTabMin: 15000,
+                timeoutReloadTabMax: 90000
             }, 'settings')
 
             const max = json.questions.length + json.topics.length
@@ -131,6 +133,14 @@ async function init() {
                 }
             })();
             return
+        }
+
+        if (oldVersion <= 12) {
+            console.log('Этап обновления с версии 12 на 13')
+            settings = await transaction.objectStore('other').get('settings')
+            settings.timeoutReloadTabMin = 15000
+            settings.timeoutReloadTabMax = 90000
+            await transaction.objectStore('other').put(settings, 'settings')
         }
 
         console.log('Обновление базы данных завершено')
