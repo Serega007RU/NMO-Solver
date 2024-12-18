@@ -580,11 +580,13 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
 
     foundEE.name = normalizeText(foundEE.name)
 
-    if (educationalElement.name && educationalElement.name !== foundEE.name) {
-        console.warn('Названия не соответствуют:')
-        console.warn(educationalElement.name)
-        console.warn(foundEE.name)
-        educationalElement.error = 'Есть не соответствие в названии, название было изменено'
+    if (educationalElement.name !== foundEE.name) {
+        if (educationalElement.name) {
+            console.warn('Названия не соответствуют:')
+            console.warn(educationalElement.name)
+            console.warn(foundEE.name)
+            educationalElement.error = 'Есть не соответствие в названии, название было изменено'
+        }
         const newTopic = await db.getFromIndex('topics', 'name', foundEE.name)
         if (newTopic) {
             console.warn('Найден дублирующий topic, для исправления он был удалён', JSON.stringify(educationalElement))
