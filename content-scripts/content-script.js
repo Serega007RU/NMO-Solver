@@ -14,6 +14,7 @@ let shadowRoot, highLightDiv, statusDiv, statusBody, observerAll, observerResize
 
 
 function osReceiveStatus(message) {
+    if (message.settings) settings = message.settings
     if (message.running) {
         stopRunning = false
         nextRepeat = 0
@@ -24,7 +25,6 @@ function osReceiveStatus(message) {
         statusBody.innerText = 'Подождите\nИдёт инициализация\nлокальной базы данных\nэто может занять\nоколо 5-ти минут'
     }
     if (message.settings) {
-        settings = message.settings
         listenQuestions()
     }
 }
