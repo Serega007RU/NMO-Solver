@@ -199,7 +199,10 @@ async function restoreOptions() {
     if (settings.goodScore) {
         document.querySelector('#GoodScore').parentElement.removeAttribute('style')
     }
+    await updateStats()
+}
 
+async function updateStats() {
     const newAnswers = await db.countFromIndex('questions', 'newChange', 2)
     const newChanges = await db.countFromIndex('questions', 'newChange', 1)
     const newTopics = await db.countFromIndex('topics', 'newChange', 1)
@@ -262,6 +265,9 @@ async function joinQuestions(json, status) {
         const key = await transaction.objectStore('questions').index('question').getKey(newQuestion.question)
         if (!key) {
             for (const [index, oldTopicKey] of newQuestion.topics.entries()) {
+                if (!oldTopics[oldTopicKey]) {
+                    continue
+                }
                 const topicKey = await transaction.objectStore('topics').index('name').getKey(oldTopics[oldTopicKey])
                 if (topicKey == null) {
                     console.warn('Проблема при объединении баз данных, не найдена тема', oldTopicKey)
@@ -336,7 +342,8 @@ async function joinQuestions(json, status) {
     const newAnswers = await transaction.objectStore('questions').index('newChange').count(2)
     const newChanges = await transaction.objectStore('questions').index('newChange').count(1)
     const newTopics = await transaction.objectStore('topics').index('newChange').count(1)
-    status.innerText = `Объединение завершено\nВ БД добавлено\n${oldNewAnswers - newAnswers} новых ответов\n${oldNewChanges - newChanges} новых изменений\n${oldNewTopics - newTopics} новых тем`
+    status.innerText = `Объединение завершено\nВ БД добавлено\n${newAnswers - oldNewAnswers} новых ответов\n${newChanges - oldNewChanges} новых изменений\n${newTopics - oldNewTopics} новых тем`
+    await updateStats()
     console.log('Объединение баз данных окончено')
 }
 
