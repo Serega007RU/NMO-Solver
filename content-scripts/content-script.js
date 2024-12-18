@@ -673,7 +673,8 @@ function wait(ms) {
 // здесь дожидаемся когда все http (fetch) запросы save-answers завершатся
 async function waitSendAnswer() {
     let count = 0
-    while (count <= 150) {
+    const maxWait = Math.floor(Math.random() * (900 - 150) + 150)
+    while (count <= maxWait) {
         if (stopRunning) {
             stop()
             return
@@ -683,9 +684,9 @@ async function waitSendAnswer() {
         } else {
             await wait(100)
         }
-        count = count + 1
+        count += 1
     }
-    if (count > 150) console.warn('не дождались завершения http запросов save-answers', countAnsweredAnswers)
+    if (count > maxWait) console.warn('не дождались завершения http запросов save-answers', countAnsweredAnswers)
 }
 
 const observer = new PerformanceObserver((list) => {

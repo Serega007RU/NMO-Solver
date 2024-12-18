@@ -346,6 +346,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         (async () => {
             await initializeFunc
             settings = await db.get('other', 'settings')
+            self.settings = settings
         })()
     }
 })
