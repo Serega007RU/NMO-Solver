@@ -322,11 +322,11 @@ async function start(collectAnswers) {
                 if (variantText.includes('оценка 3')) {
                     countGood += 1
                 } else if (variantText.includes('оценка 4')) {
-                    countGood += 5
+                    countGood += 8
                 } else if (variantText.includes('оценка 5')) {
-                    countGood += 15
+                    countGood += 30
                 }
-                if (countGood >= 30) {
+                if (countGood >= 60) {
                     hasSuccessTest = true
                     hasGoodScore = true
                 }
