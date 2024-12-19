@@ -212,15 +212,15 @@ async function reimportEducationElements() {
             topic.completed = 0
             if (object.id && !topic.id) {
                 topic.id = object.id
-                topic.newChange = 2
+                if (!topic.newChange) topic.newChange = 2
             }
             if (object.code && !topic.code) {
                 topic.code = object.code
-                topic.newChange = 2
+                if (!topic.newChange) topic.newChange = 2
             }
             if (object.name && !topic.name) {
                 topic.name = object.name
-                topic.newChange = 2
+                if (!topic.newChange) topic.newChange = 2
             }
             console.log('Обновлён', topic)
         } else {
@@ -607,15 +607,15 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     }
     if (educationalElement.id !== foundEE.id) {
         educationalElement.id = foundEE.id
-        educationalElement.newChange = 2
+        if (!educationalElement.newChange) educationalElement.newChange = 2
     }
     if (educationalElement.name !== foundEE.name) {
         educationalElement.name = foundEE.name
-        educationalElement.newChange = 2
+        if (!educationalElement.newChange) educationalElement.newChange = 2
     }
     if (educationalElement.code !== foundEE.number) {
         educationalElement.code = foundEE.number
-        educationalElement.newChange = 2
+        if (!educationalElement.newChange) educationalElement.newChange = 2
     }
     // educationalElement.completed = completed
     // educationalElement.status = status
@@ -1068,7 +1068,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
 
                     if (changedAnswers || changedCombinations || changedOther) {
-                        if (changedCombinations) question.newChange = 1
+                        if (changedCombinations && !question.newChange) question.newChange = 1
                         if (changedAnswers) question.newChange = 2
                         await db.put('questions', question, key)
                         if (changedAnswers) {
@@ -1383,7 +1383,8 @@ async function joinAnswers(topicKey, questionText, answers, correctAnswers) {
         question: questionText,
         answers: {},
         correctAnswers: {},
-        topics: [topicKey]
+        topics: [topicKey],
+        newChange: 2
     }
     if (key) {
         question = await db.get('questions', key)
@@ -1419,6 +1420,7 @@ async function joinAnswers(topicKey, questionText, answers, correctAnswers) {
         question.topics.push(topicKey)
     }
     if (Object.values(changed)) {
+        question.newChange = 2
         console.log('С интернета добавлены или изменены ответы в бд', question, JSON.stringify(changed))
         // await db.put('questions', question, key)
     }

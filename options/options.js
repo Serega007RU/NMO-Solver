@@ -271,7 +271,16 @@ async function joinQuestions(json, status) {
     for (const newTopic of json.topics) {
         if (!newTopic.name) continue
         oldTopics[newTopic.key] = newTopic.name
-        const found = await transaction.objectStore('topics').index('name').get(newTopic.name)
+        let found
+        if (newTopic.id) {
+            found = await transaction.objectStore('topics').index('id').get(newTopic.id)
+        }
+        if (!found && newTopic.code) {
+            found = await transaction.objectStore('topics').index('code').get(newTopic.code)
+        }
+        if (!found && newTopic.name) {
+            found = await transaction.objectStore('topics').index('name').get(newTopic.name)
+        }
         if (!found) {
             delete newTopic.key
             newTopic.newChange = 1
@@ -283,6 +292,9 @@ async function joinQuestions(json, status) {
             }
             if (newTopic.id) {
                 found.id = newTopic.id
+            }
+            if (newTopic.name) {
+                found.name = newTopic.name
             }
             await transaction.objectStore('topics').put(found)
         }
@@ -359,8 +371,8 @@ async function joinQuestions(json, status) {
             }
 
             if (changed || changedAnswers) {
+                if (changed && !question.newChange) question.newChange = 1
                 if (changedAnswers) question.newChange = 2
-                if (changed) question.newChange = 1
                 console.log('обновлён', question)
                 await transaction.objectStore('questions').put(question, key)
             }
