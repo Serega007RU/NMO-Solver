@@ -265,12 +265,22 @@ async function joinQuestions(json, status) {
     const oldNewTopics = await transaction.objectStore('topics').index('newChange').count(1)
 
     for (const newTopic of json.topics) {
+        if (!newTopic.name) continue
         oldTopics[newTopic.key] = newTopic.name
-        const count = await transaction.objectStore('topics').index('name').count(newTopic.name)
-        if (!count) {
+        const found = await transaction.objectStore('topics').index('name').get(newTopic.name)
+        if (!found) {
             delete newTopic.key
             newTopic.newChange = 1
             await transaction.objectStore('topics').put(newTopic)
+        } else if (newTopic.newChange) {
+            found.newChange = newTopic.newChange
+            if (newTopic.code) {
+                found.code = newTopic.code
+            }
+            if (newTopic.id) {
+                found.id = newTopic.id
+            }
+            await transaction.objectStore('topics').put(found)
         }
         currentLength++
         status.innerText = `Объединяем бд\nПрогресс ${currentLength} / ${length}`

@@ -67,6 +67,7 @@ async function init() {
             topics.createIndex('completed', 'completed')
             topics.createIndex('code', 'code', {unique: true})
             topics.createIndex('id', 'id', {unique: true})
+            // 1 - новая тема, 2 - есть изменения (да, немного не логично по сравнению с questions)
             topics.createIndex('newChange', 'newChange')
             const other = db.createObjectStore('other')
 
@@ -209,15 +210,25 @@ async function reimportEducationElements() {
         }
         if (topic) {
             topic.completed = 0
-            if (object.id && !topic.id) topic.id = object.id
-            if (object.code && !topic.code) topic.code = object.code
-            if (object.name && !topic.name) topic.name = object.name
+            if (object.id && !topic.id) {
+                topic.id = object.id
+                topic.newChange = 2
+            }
+            if (object.code && !topic.code) {
+                topic.code = object.code
+                topic.newChange = 2
+            }
+            if (object.name && !topic.name) {
+                topic.name = object.name
+                topic.newChange = 2
+            }
             console.log('Обновлён', topic)
         } else {
             topic = object
             topic.completed = 0
             // TODO временно
             topic.needSearchAnswers = true
+            topic.newChange = 1
             console.log('Добавлен', topic)
         }
         await transaction.put(topic)
@@ -594,11 +605,20 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             educationalElement.key = newTopic.key
         }
     }
-    educationalElement.id = foundEE.id
-    educationalElement.name = foundEE.name
+    if (educationalElement.id !== foundEE.id) {
+        educationalElement.id = foundEE.id
+        educationalElement.newChange = 2
+    }
+    if (educationalElement.name !== foundEE.name) {
+        educationalElement.name = foundEE.name
+        educationalElement.newChange = 2
+    }
+    if (educationalElement.code !== foundEE.number) {
+        educationalElement.code = foundEE.number
+        educationalElement.newChange = 2
+    }
     // educationalElement.completed = completed
     // educationalElement.status = status
-    educationalElement.code = foundEE.number
     await db.put('topics', educationalElement)
 
     if (foundEE.iomHost?.name) {
@@ -1262,7 +1282,7 @@ async function searchOn24forcare(topic, topicKey) {
             console.log('Найдено ' + topicText)
             newTopic = await db.getFromIndex('topics', 'name', topicText)
             if (!newTopic) {
-                topicKey = await db.put('topics', {name: topicText})
+                topicKey = await db.put('topics', {name: topicText, newChange: 1})
                 console.log('Внесена новая тема в базу', topicText)
             }
             for (const el of doc2.querySelectorAll('.row h3')) {
@@ -1327,7 +1347,7 @@ async function searchOnReshnmo(topic, topicKey) {
             console.log('Найдено ' + topicText)
             newTopic = await db.getFromIndex('topics', 'name', topicText)
             if (!newTopic) {
-                topicKey = await db.put('topics', {name: topicText})
+                topicKey = await db.put('topics', {name: topicText, newChange: 1})
                 console.log('Внесена новая тема в базу', topicText)
             }
             for (const el of doc2.querySelectorAll('.entry-content h3')) {
