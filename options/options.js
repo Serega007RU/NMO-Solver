@@ -219,7 +219,9 @@ async function restoreOptions() {
 
 async function updateStats() {
     const newAnswers = await db.countFromIndex('questions', 'newChange', 2)
-    const newChanges = await db.countFromIndex('questions', 'newChange', 1)
+    const newChangesQuestions = await db.countFromIndex('questions', 'newChange', 1)
+    const newChangesTopics = await db.countFromIndex('topics', 'newChange', 2)
+    const newChanges = newChangesQuestions + newChangesTopics
     const newTopics = await db.countFromIndex('topics', 'newChange', 1)
     document.querySelector('label[for="exportdb"] .status').innerText = `Кол-во изменений в вашей бд:\nНовых ответов ${newAnswers}\nНовых изменений ${newChanges}\nНовых тем ${newTopics}`
 }
@@ -261,7 +263,9 @@ async function joinQuestions(json, status) {
     let length = json.topics.length + json.questions.length
     let currentLength = 0
     const oldNewAnswers = await transaction.objectStore('questions').index('newChange').count(2)
-    const oldNewChanges = await transaction.objectStore('questions').index('newChange').count(1)
+    const oldNewChangesQuestions = await transaction.objectStore('questions').index('newChange').count(1)
+    const oldNewChangesTopics = await transaction.objectStore('topics').index('newChange').count(2)
+    const oldNewChanges = oldNewChangesQuestions + oldNewChangesTopics
     const oldNewTopics = await transaction.objectStore('topics').index('newChange').count(1)
 
     for (const newTopic of json.topics) {
@@ -365,7 +369,9 @@ async function joinQuestions(json, status) {
         status.innerText = `Объединяем бд\nПрогресс ${currentLength} / ${length}`
     }
     const newAnswers = await transaction.objectStore('questions').index('newChange').count(2)
-    const newChanges = await transaction.objectStore('questions').index('newChange').count(1)
+    const newChangesQuestions = await transaction.objectStore('questions').index('newChange').count(1)
+    const newChangesTopics = await transaction.objectStore('topics').index('newChange').count(2)
+    const newChanges = newChangesQuestions + newChangesTopics
     const newTopics = await transaction.objectStore('topics').index('newChange').count(1)
     status.innerText = `Объединение завершено\nВ БД добавлено\n${newAnswers - oldNewAnswers} новых ответов\n${newChanges - oldNewChanges} новых изменений\n${newTopics - oldNewTopics} новых тем`
     await updateStats()
