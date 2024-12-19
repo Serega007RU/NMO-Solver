@@ -20,7 +20,7 @@ let startFunc
 let settings
 
 let firstInit = false
-const initStage = {stage1: {current: 0, max: 0, percent: '0'}, stage2: {current: 0, max: 0, percent: '0'}, stage3: {current: 0, max: 0, percent: '0'}}
+const initStage = {stage1: {current: 0, max: 0, percent: 0}, stage2: {current: 0, max: 0, percent: 0}, stage3: {current: 0, max: 0, percent: 0}}
 let lastSend
 const initializeFunc = init()
 waitUntil(initializeFunc)
@@ -86,8 +86,8 @@ async function init() {
             }, 'settings')
 
             const max = json.questions.length + json.topics.length
-            initStage.stage2 = {current: 0, max, percent: '0'}
-            initStage.stage3 = {current: 0, max, percent: '0'}
+            initStage.stage2 = {current: 0, max, percent: 0}
+            initStage.stage3 = {current: 0, max, percent: 0}
             sendStage()
             const promises = []
             function onComplete() {
