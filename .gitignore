@@ -1,6 +1,6 @@
 /.idea/
 /data/врачи.txt
-/data/nmo_db.json
+/data/nmo_db_*.json
 /data/questions.json
 /data/questions_with_kostya.json
 /data/questions_without_kostya.json

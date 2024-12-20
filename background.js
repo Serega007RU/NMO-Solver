@@ -1,13 +1,8 @@
 import { openDB, deleteDB } from '/libs/idb.js';
 import { default as objectHash } from '/libs/object-hash.js';
-import { JSDOM } from '/libs/jsdom.js';
+import { JSDOM } from '/libs/jsdom.js'; // TODO для меньшей нагрузки следует эту реализацию заменить на API chrome.offscreen (ну и говно-код же получится с его использованием)
 import '/utils.js'
 import '/normalize-text.js'
-
-self.JSDOM = JSDOM // TODO для меньшей нагрузки следует эту реализацию заменить на API chrome.offscreen (ну и говно-код же получится с его использованием)
-self.objectHash = objectHash
-self.openDB = openDB
-self.deleteDB = deleteDB
 
 let db
 let runningTab
@@ -19,35 +14,43 @@ let started = 0
 let startFunc
 let settings
 
-let firstInit = false
-const initStage = {stage1: {current: 0, max: 0, percent: 0}, stage2: {current: 0, max: 0, percent: 0}, stage3: {current: 0, max: 0, percent: 0}}
-let lastSend
+const new_db = [1, 14]
+const dbVersion = 14
+let firstInit = null
+self.initStage = {stage1: {current: 0, max: 0, percent: 0}, stage2: {current: 0, max: 0, percent: 0}, stage3: {current: 0, max: 0, percent: 0}}
+self.lastSend = null
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    const dbCheck = await openDB('check', 1, {upgrade: (db, oldVersion) => firstInit = oldVersion === 0})
+    // вся эта хрень с бд 'check' нужна, что б при инициализации или обновлении бд мы предварительно загрузили данные из json'ов
+    let dbCheck = await openDB('check', dbVersion, {upgrade: (db, oldVersion) => firstInit = oldVersion})
     dbCheck.close()
-    let json
-    if (firstInit) {
-        console.log('первая загрузка, загружаем ответы в базу данных')
+    const jsons = []
+    if (firstInit !== null) {
         await deleteDB('check')
-        initStage.stage1 = {current: 0, max: 1, percent: 0}
+        if (firstInit !== 0) {
+            dbCheck = await openDB('check', firstInit)
+            dbCheck.close()
+        }
+        for (const ver of new_db) {
+            if (firstInit + 1 <= ver) {
+                self.initStage.stage1.max++
+            }
+        }
         sendStage()
-        const response = await fetch(chrome.runtime.getURL('data/nmo_db.json'))
-        json = await response.json()
-        initStage.stage1.current = 1
-        sendStage()
+        for (const ver of new_db) {
+            if (firstInit + 1 <= ver) {
+                const response = await fetch(chrome.runtime.getURL(`data/nmo_db_${ver}.json`))
+                const json = await response.json()
+                jsons.push(json)
+                self.initStage.stage1.current++
+                sendStage()
+            }
+        }
     }
-    db = await openDB('nmo', 13, {upgrade})
-    // TODO если бд инициализировалась но в ней нет никаких данных, значит это не успешная инициализация, пробуем её переинициализировать
-    if (firstInit) {
-        console.warn('Похоже бд не успешно инициализировалась, делаем это повторно')
-        db.close()
-        await deleteDB('nmo')
-        db = await openDB('nmo', 13, {upgrade})
-    }
-    json = null
+    db = await openDB('nmo', dbVersion, {upgrade})
+    jsons.length = 0
     self.db = db
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -85,22 +88,23 @@ async function init() {
                 timeoutReloadTabMax: 90000
             }, 'settings')
 
-            const max = json.questions.length + json.topics.length
-            initStage.stage2 = {current: 0, max, percent: 0}
-            initStage.stage3 = {current: 0, max, percent: 0}
+            for (const json of jsons) {
+                self.initStage.stage2.max += json.questions.length + json.topics.length
+                self.initStage.stage3.max += json.questions.length + json.topics.length
+            }
             sendStage()
             const promises = []
             function onComplete() {
-                initStage.stage3.current += 1
+                self.initStage.stage3.current++
                 sendStage()
             }
 
-            for (const question of json.questions) {
+            for (const question of jsons[0].questions) {
                 const promise = questions.add(question)
                 promises.push(promise)
                 promise.finally(onComplete)
-                initStage.stage2.current += 1
-                if (initStage.stage2.current % 10000 === 0) {
+                self.initStage.stage2.current++
+                if (self.initStage.stage2.current % 10000 === 0) {
                     // TODO таким вот тупорылым костылём мы избавляемся от провисания и дальнейшего схлопывания фонового процесса из-за ограничения по lifetime Serice Worker
                     //  waitUntil даже не помогает, всё из-за провисания
                     await questions.get(0)
@@ -108,13 +112,13 @@ async function init() {
                 sendStage()
             }
 
-            for (const topic of json.topics) {
+            for (const topic of jsons[0].topics) {
                 topics.put(topic)
                 const promise = topics.put(topic)
                 promises.push(promise)
                 promise.finally(onComplete)
-                initStage.stage2.current += 1
-                if (initStage.stage2.current % 10000 === 0) {
+                self.initStage.stage2.current++
+                if (self.initStage.stage2.current % 10000 === 0) {
                     await questions.get(0)
                 }
                 sendStage()
@@ -122,8 +126,19 @@ async function init() {
 
             await Promise.all(promises)
 
-            openDB('check', 1)
-            firstInit = false;
+            let firstTemp = true
+            for (const json of jsons) {
+                if (firstTemp) {
+                    firstTemp = false
+                    continue
+                }
+                await joinDB(json, transaction)
+            }
+
+            dbCheck = await openDB('check', dbVersion)
+            dbCheck.close()
+
+            firstInit = null;
 
             (async () => {
                 const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
@@ -136,6 +151,19 @@ async function init() {
             return
         }
 
+        if (jsons) {
+            console.log('Загрузка новых ответов')
+            for (const json of jsons) {
+                self.initStage.stage2.max += json.questions.length + json.topics.length
+                self.initStage.stage3.max += json.questions.length + json.topics.length
+            }
+            sendStage()
+            for (const json of jsons) {
+                await joinDB(json, transaction)
+            }
+            console.log('Загрузка новых ответов окончена')
+        }
+
         if (oldVersion <= 12) {
             console.log('Этап обновления с версии 12 на 13')
             settings = await transaction.objectStore('other').get('settings')
@@ -144,10 +172,21 @@ async function init() {
             await transaction.objectStore('other').put(settings, 'settings')
         }
 
+        dbCheck = await openDB('check', dbVersion)
+        dbCheck.close()
+
+        firstInit = null
+
         console.log('Обновление базы данных завершено')
     }
 
-    firstInit = false
+    // на случай если не удалось обновить бд (ну и хрен с ним)
+    if (firstInit) {
+        dbCheck = await openDB('check', dbVersion)
+        dbCheck.close()
+        firstInit = null
+    }
+
 
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -299,22 +338,24 @@ async function getCorrectAnswers(topic, index) {
 function sendStage() {
     let changed
     for (let x=1; x<=3; x++) {
-        const stage = initStage['stage' + x]
+        const stage = self.initStage['stage' + x]
         const percent = (100 * stage.current / stage.max) | 0
         if (stage.percent !== percent) {
-            initStage['stage' + x].percent = percent
+            self.initStage['stage' + x].percent = percent
             changed = percent
         }
     }
-    if (changed === 100 || (changed && Date.now() - lastSend >= 1000)) {
-        lastSend = Date.now();
+    if (changed === 100 || (changed && Date.now() - self.lastSend >= 500)) {
+        console.log(self.initStage)
+        self.lastSend = Date.now();
         (async () => {
             try {
-                await chrome.runtime.sendMessage({initStage})
+                await chrome.runtime.sendMessage({initStage: self.initStage})
             } catch (ignored) {}
         })()
     }
 }
+self.sendStage = sendStage
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.authData) {
@@ -327,7 +368,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })()
     }
     if (message.status) {
-        if (firstInit) {
+        if (firstInit !== null) {
             sendResponse({running: false, initializing: true})
         } else {
             (async () => {
@@ -365,7 +406,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.action.onClicked.addListener(async (tab) => {
     chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
     chrome.action.setBadgeText({text: ''})
-    if (firstInit) {
+    if (firstInit !== null) {
         chrome.runtime.openOptionsPage()
         return
     }

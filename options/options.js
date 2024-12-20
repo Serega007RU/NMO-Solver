@@ -10,7 +10,7 @@ async function init() {
         document.querySelector('#initializing').removeAttribute('style')
         await new Promise(resolve => resolveInit = resolve)
     }
-    db = await idb.openDB('nmo', 13)
+    db = await idb.openDB('nmo', 14)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -105,7 +105,8 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             importDbStatus.innerText = 'Импортируем...'
             const [file] = event.target.files
             const data = await new Response(file).json()
-            await joinQuestions(data, importDbStatus)
+            const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+            await joinDB(data, transaction, importDbStatus)
         } catch (error) {
             console.error(error)
             importDbStatus.innerText = 'Произошла ошибка:\n' + error.message
@@ -225,13 +226,13 @@ async function updateStats() {
     const newTopics = await db.countFromIndex('topics', 'newChange', 1)
     document.querySelector('label[for="exportdb"] .status').innerText = `Кол-во изменений в вашей бд:\nНовых ответов ${newAnswers}\nНовых изменений ${newChanges}\nНовых тем ${newTopics}`
 }
+self.updateStats = updateStats
 
 chrome.runtime.onMessage.addListener((message) => {
     if (message.initStage) {
         document.querySelector('#LoadingText').style.display = 'none'
         document.querySelector('#initializing').removeAttribute('style')
         const initStage = message.initStage
-        console.log(initStage)
         document.querySelector('#percent1').innerText = `Прогресс ${initStage.stage1.percent}%`
         document.querySelector('#progress1').innerText = `Загружено ${initStage.stage1.current.toLocaleString('ru')}/${initStage.stage1.max.toLocaleString('ru')}`
         document.querySelector('#percent2').innerText = `Прогресс ${initStage.stage2.percent}%`
@@ -239,7 +240,11 @@ chrome.runtime.onMessage.addListener((message) => {
         document.querySelector('#percent3').innerText = `Прогресс ${initStage.stage3.percent}%`
         document.querySelector('#progress3').innerText = `Загружено ${initStage.stage3.current.toLocaleString('ru')}/${initStage.stage3.max.toLocaleString('ru')}`
         if (initStage.stage3.current && initStage.stage3.current === initStage.stage3.max) {
-            resolveInit()
+            if (resolveInit) {
+                resolveInit()
+            } else {
+                document.location.reload()
+            }
         }
     }
 })
@@ -253,140 +258,5 @@ async function onChangedSettings() {
             await chrome.tabs.sendMessage(tab.id, {status: true, settings})
         } catch (ignored) {}
     }
-}
-
-async function joinQuestions(json, status) {
-    console.log('Объединение баз данных запущено')
-    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
-    const oldTopics = {}
-
-    let length = json.topics.length + json.questions.length
-    let currentLength = 0
-    const oldNewAnswers = await transaction.objectStore('questions').index('newChange').count(2)
-    const oldNewChangesQuestions = await transaction.objectStore('questions').index('newChange').count(1)
-    const oldNewChangesTopics = await transaction.objectStore('topics').index('newChange').count(2)
-    const oldNewChanges = oldNewChangesQuestions + oldNewChangesTopics
-    const oldNewTopics = await transaction.objectStore('topics').index('newChange').count(1)
-
-    for (const newTopic of json.topics) {
-        if (!newTopic.name) continue
-        oldTopics[newTopic.key] = newTopic.name
-        let found
-        if (newTopic.id) {
-            found = await transaction.objectStore('topics').index('id').get(newTopic.id)
-        }
-        if (!found && newTopic.code) {
-            found = await transaction.objectStore('topics').index('code').get(newTopic.code)
-        }
-        if (!found && newTopic.name) {
-            found = await transaction.objectStore('topics').index('name').get(newTopic.name)
-        }
-        if (!found) {
-            delete newTopic.key
-            newTopic.newChange = 1
-            await transaction.objectStore('topics').put(newTopic)
-        } else if (newTopic.newChange) {
-            found.newChange = newTopic.newChange
-            if (newTopic.code) {
-                found.code = newTopic.code
-            }
-            if (newTopic.id) {
-                found.id = newTopic.id
-            }
-            if (newTopic.name) {
-                found.name = newTopic.name
-            }
-            await transaction.objectStore('topics').put(found)
-        }
-        currentLength++
-        status.innerText = `Объединяем бд\nПрогресс ${currentLength} / ${length}`
-    }
-
-    for (const newQuestion of json.questions) {
-        const key = await transaction.objectStore('questions').index('question').getKey(newQuestion.question)
-        if (!key) {
-            for (const [index, oldTopicKey] of newQuestion.topics.entries()) {
-                if (!oldTopics[oldTopicKey]) {
-                    continue
-                }
-                const topicKey = await transaction.objectStore('topics').index('name').getKey(oldTopics[oldTopicKey])
-                if (topicKey == null) {
-                    console.warn('Проблема при объединении баз данных, не найдена тема', oldTopicKey)
-                    continue
-                }
-                newQuestion.topics[index] = topicKey
-            }
-            newQuestion.newChange = 1
-            if (Object.keys(newQuestion.correctAnswers).length) newQuestion.newChange = 2
-            console.log('добавлен', newQuestion)
-            await transaction.objectStore('questions').add(newQuestion)
-        } else {
-            let question = await transaction.objectStore('questions').get(key)
-            let changedAnswers, changed = false
-            for (const answersHash of Object.keys(newQuestion.answers)) {
-                if (!question.answers[answersHash] || (!question.answers[answersHash].type && newQuestion.answers[answersHash].type)) {
-                    changed = true
-                    question.answers[answersHash] = newQuestion.answers[answersHash]
-                }
-                if (!question.correctAnswers[answersHash] && newQuestion.correctAnswers[answersHash]) {
-                    changedAnswers = true
-                    question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
-                }
-            }
-
-            if (newQuestion.answers['unknown']) {
-                if (question.answers['unknown'] == null) question.answers['unknown'] = []
-                for (const answer of newQuestion.answers['unknown']) {
-                    if (!question.answers['unknown'].includes(answer)) {
-                        changed = true
-                        question.answers['unknown'].push(answer)
-                    }
-                }
-            }
-            if (newQuestion.correctAnswers['unknown']) {
-                if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
-                for (const answer of newQuestion.correctAnswers['unknown']) {
-                    if (!question.correctAnswers['unknown'].includes(answer)) {
-                        changedAnswers = true
-                        question.correctAnswers['unknown'].push(answer)
-                    }
-                }
-            }
-
-            const topics = []
-            for (const topicKey of question.topics) {
-                const topic = await transaction.objectStore('topics').get(topicKey)
-                topics.push(topic.name)
-            }
-            for (const topicKey of newQuestion.topics) {
-                if (oldTopics[topicKey] && !topics.includes(oldTopics[topicKey])) {
-                    const newTopicKey = await transaction.objectStore('topics').index('name').getKey(oldTopics[topicKey])
-                    if (newTopicKey == null) {
-                        console.warn('Проблема при объединении баз данных, не найдена тема', oldTopics[topicKey], topicKey)
-                        continue
-                    }
-                    changed = true
-                    question.topics.push(newTopicKey)
-                }
-            }
-
-            if (changed || changedAnswers) {
-                if (changed && !question.newChange) question.newChange = 1
-                if (changedAnswers) question.newChange = 2
-                console.log('обновлён', question)
-                await transaction.objectStore('questions').put(question, key)
-            }
-        }
-        currentLength++
-        status.innerText = `Объединяем бд\nПрогресс ${currentLength} / ${length}`
-    }
-    const newAnswers = await transaction.objectStore('questions').index('newChange').count(2)
-    const newChangesQuestions = await transaction.objectStore('questions').index('newChange').count(1)
-    const newChangesTopics = await transaction.objectStore('topics').index('newChange').count(2)
-    const newChanges = newChangesQuestions + newChangesTopics
-    const newTopics = await transaction.objectStore('topics').index('newChange').count(1)
-    status.innerText = `Объединение завершено\nВ БД добавлено\n${newAnswers - oldNewAnswers} новых ответов\n${newChanges - oldNewChanges} новых изменений\n${newTopics - oldNewTopics} новых тем`
-    await updateStats()
-    console.log('Объединение баз данных окончено')
 }
 

@@ -21,9 +21,6 @@ function osReceiveStatus(message) {
         running = true
         start(message.collectAnswers)
     }
-    if (message.initializing && statusBody) {
-        statusBody.innerText = 'Подождите\nИдёт инициализация\nлокальной базы данных\nэто может занять\nоколо 5-ти минут'
-    }
     if (message.settings) {
         listenQuestions()
     }
