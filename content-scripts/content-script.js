@@ -725,7 +725,7 @@ function highlightAnswers(remove) {
     if (cachedCorrect) {
         statusBody.innerText = 'Подсвечены правильные ответы'
     } else {
-        statusBody.innerText = 'Подсвечены предполагаемые ответы\n(методом подбора)\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+        statusBody.innerText = 'В базе нет ответов на данный вопрос\nПодсвечены предполагаемые ответы\n(методом подбора)\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
     }
 }
 
