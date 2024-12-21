@@ -100,16 +100,18 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     document.querySelector('#importdb').addEventListener('change', async (event) => {
         if (importing) return
         importing = true
+        let transaction
         try {
             if (event.target.files.length === 0) return
             importDbStatus.innerText = 'Импортируем...'
             const [file] = event.target.files
             const data = await new Response(file).json()
-            const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+            transaction = db.transaction(['questions', 'topics'], 'readwrite')
             await joinDB(data, transaction, importDbStatus)
         } catch (error) {
             console.error(error)
             importDbStatus.innerText = 'Произошла ошибка:\n' + error.message
+            if (transaction) transaction.abort()
         } finally {
             document.querySelector('#importdb').value = ''
             importing = false
