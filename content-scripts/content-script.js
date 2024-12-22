@@ -27,7 +27,7 @@ function osReceiveStatus(message) {
 }
 chrome.runtime.sendMessage({
     status: true,
-    authData: JSON.parse(localStorage.getItem('rsmu_tokenData')),
+    authData: JSON.parse(localStorage.getItem('rsmu_tokenData')) || JSON.parse(localStorage.getItem('tokenData')),
     cabinet: document.location.host.split('.')[0].split('-')[1]
 }, osReceiveStatus)
 
@@ -42,9 +42,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
             start()
         }
     } else if (message.stop) {
-        running = false
-        stopRunning = true
-        if (rejectWait) rejectWait()
+        stop()
     } else if (message.hasTest) {
         const hasTest = Boolean(document.querySelector('.v-tabsheet-caption-close')) || Boolean(document.querySelector('lib-quiz-page'))
         sendResponse({hasTest})
@@ -100,7 +98,7 @@ async function portListener(message) {
         if (Math.random() < 0.75) {
             element = checkedElement.closest('.mdc-form-field').firstElementChild
         } else {
-            element = checkedElement.closest('.mdc-form-field').lastElementChild
+            element = checkedElement
         }
         const answersElements = document.querySelectorAll('.question-inner-html-text')
         const idOfLastAnswer = answersElements[answersElements.length - 1].closest('.mdc-form-field').querySelector('input').id
@@ -124,7 +122,7 @@ async function portListener(message) {
                 if (Math.random() < 0.75) {
                     element = el.closest('.mdc-form-field').firstElementChild
                 } else {
-                    element = el.closest('.mdc-form-field').lastElementChild
+                    element = el
                 }
                 const idOfLastAnswer = answersElements[answersElements.length - 1].closest('.mdc-form-field').querySelector('input').id
                 await simulateClick(element)
@@ -171,39 +169,47 @@ async function nextQuestion() {
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
             await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
         } else {
+            const waitNextQuestion = waitForLoadNextQuestion()
             // кликаем следующий вопрос
             await simulateClick(nextQuestionButton)
+            await waitNextQuestion
             countAnsweredAnswers = countAnsweredAnswers + 1
         }
     }
 }
 
-async function attemptToClosePopups() {
-    if (document.querySelector('.v-Notification')) {
-        simulateClick(document.querySelector('.v-Notification'))
-        document.querySelector('.v-Notification')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
-        document.querySelector('.v-Notification')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-out-fade'}))
-        await watchForElement('.v-Notification', true)
-        await randomWait()
-    }
-
-    for (let x=0; x<=1; x++) {
-        if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')) {
-            await simulateClick(Array.from(document.querySelectorAll('.v-window-closebox:not(.v-window-closebox-disabled)')).pop())
-            // await watchForElement('.v-window-closebox:not(.v-window-closebox-disabled)', true)
+async function attemptToClosePopups(count = 0) {
+    let popup = Array.from(document.querySelectorAll('.popupContent')).filter(el => el.innerText.length).pop()
+    while (popup) {
+        if (stopRunning) return
+        if (popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')) {
+            const waitRemove = watchForRemoveElement('.v-window-closebox')
+            await simulateClick(popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)'), count)
             await randomWait()
-        }
-        // а зачем здесь "Назад" в проверке? А потому что портал может открыть тест в popup'е, ДА, ВЕСЬ тест прямо в popup'e!!!
-        if (document.querySelector('.popupContent .v-button') && !document.querySelector('.popupContent .v-button').textContent.endsWith('Назад')) {
-            await simulateClick(document.querySelector('.popupContent .v-button'))
-            await watchForElement('.popupContent .v-button', true)
+            await waitRemove
+            // а зачем здесь "Назад" в проверке? А потому что портал может открыть тест в popup'е, ДА, ВЕСЬ тест прямо в popup'e!!!
+        } else if (popup.querySelector('.v-button') && !popup.querySelector('.v-button').textContent.endsWith('Назад')) {
+            const waitRemove = watchForRemoveElement('.v-button')
+            await simulateClick(popup.querySelector('.v-button'), count)
             await randomWait()
+            await waitRemove
+        } else if (popup.querySelector('[class*="v-Notification"]')) {
+            const waitRemove = watchForRemoveElement('[class*="v-Notification"]')
+            simulateClick(popup.querySelector('[class*="v-Notification"]'), count)
+            await randomWait()
+            popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
+            popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-out-fade'}))
+            await waitRemove
+        } else {
+            break
         }
+        popup = Array.from(document.querySelectorAll('.popupContent')).filter(el => el.innerText.length).pop()
     }
 }
 
 let nextRepeat = 0
 let hasISTask = false
+let hasBack = false
 async function start(collectAnswers) {
     if (stopRunning) {
         stop()
@@ -213,6 +219,7 @@ async function start(collectAnswers) {
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
+        port.onDisconnect.addListener(() => port = null)
     }
     if (collectAnswers) port.postMessage({collectAnswers})
 
@@ -238,6 +245,7 @@ async function start(collectAnswers) {
 
             // подтверждаем закрытие вкладки
             await attemptToClosePopups()
+            await wait(500)
             await randomWait()
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
@@ -254,11 +262,15 @@ async function start(collectAnswers) {
     await attemptToClosePopups()
 
     if (document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Скачать сертификат' || document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Ожидание выгрузки результатов...') {
+        // TODO не всегда получается дождаться скачивания сертификата
         // await watchForText('.v-align-center .v-button-caption', 'Скачать сертификат')
-        if (settings.goodScore && !hasGoodScore) {
+        if (settings.goodScore && !hasGoodScore && !hasBack) {
+            hasBack = true
+            const waitNext = watchForChangeElement('.v-slot-iom-elementbox-text')
             // TODO иногда кнопка Далее активна и есть страница дальше даже после страницы получения сертификата
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
-            await watchForElement('.c-table-clickable-cell')
+            await waitNext
+            // await watchForElement('.c-table-clickable-cell')
         } else {
             const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
 
@@ -269,6 +281,7 @@ async function start(collectAnswers) {
 
             // подтверждаем закрытие вкладки
             await attemptToClosePopups()
+            await wait(500)
             await randomWait()
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
@@ -333,6 +346,11 @@ async function start(collectAnswers) {
         }
     }
 
+    if (testName === 'Запись вебинара') {
+        hasSuccessTest = true
+        hasGoodScore = true
+    }
+
     if (collectAnswers) {
         if (document.querySelector('.c-table-clickable-cell')) {
             console.log('просмотр ответов окончен')
@@ -343,11 +361,12 @@ async function start(collectAnswers) {
         return
     }
 
-    if (testName === 'Задача' || testName === 'Интерактивные ситуационные задачи' || testName === 'Интерактивная ситуационная задача') {
+    if (testName === 'Задача' || testName === 'Интерактивные ситуационные задачи' || testName === 'Интерактивная ситуационная задача' || testName === 'Задачи для самоподготовки') {
         hasISTask = true
     }
 
     const buttonNewVariant = document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
+    if (!hasISTask && document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи') hasISTask = true
     if (!hasSuccessTest && buttonNewVariant && !hasISTask) {
         await wait(500)
         // если тест не запущен и нет пройденного, то получаем новый вариант
@@ -370,8 +389,10 @@ async function start(collectAnswers) {
             chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток переключиться на следующий этап (вперёд)'})
             return
         }
+        const waitNext = watchForChangeElement('.v-slot-iom-elementbox-text')
         await simulateClick(next)
-        await wait(250)
+        await waitNext
+        // await wait(250)
         await randomWait()
         start()
     } else {
@@ -422,7 +443,7 @@ async function runTest() {
 
     // тут мы типо думаем над вопросом, от 3 до 30 секунд
     if (settings.answerWaitMax && !topic.includes(' - Предварительное тестирование') && !topic.includes(' - Входное тестирование')) {
-        await wait(Math.floor(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin))
+        await wait(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin)
     }
 
     sendQuestion()
@@ -432,6 +453,7 @@ function sendQuestion() {
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
+        port.onDisconnect.addListener(() => port = null)
     }
     const question = {
         question: normalizeText(document.querySelector('.question-title-text').textContent),
@@ -454,6 +476,7 @@ function sendResults() {
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
+        port.onDisconnect.addListener(() => port = null)
     }
     if (sentResults) return
     sentResults = true
@@ -488,11 +511,11 @@ function watchForElement(selector, reverse) {
         }
 
         let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания'})
-        }, Math.floor(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin))
+            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания элемента "${selector}"`})
+        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
 
         rejectWait = () => {
-            stop()
+            rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
             reject('stopped by user')
@@ -522,11 +545,11 @@ function watchForText(selector, text, reverse) {
         }
 
         let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания'})
-        }, Math.floor(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin))
+            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания текста элемента "${selector}" "${text}"`})
+        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
 
         rejectWait = () => {
-            stop()
+            rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
             reject('stopped by user')
@@ -546,7 +569,98 @@ function watchForText(selector, text, reverse) {
     })
 }
 
+function watchForChangeElement(selector) {
+    return new Promise((resolve, reject) => {
+        let timer = setTimeout(() => {
+            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания изменения элемента "${selector}"`})
+        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+
+        rejectWait = () => {
+            rejectWait = null
+            observer.disconnect()
+            clearTimeout(timer)
+            reject('stopped by user')
+        }
+
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                const element = mutation.target.matches(selector) || mutation.target.closest(selector) || mutation.target.querySelector(selector)
+                if (element) {
+                    observer.disconnect()
+                    clearTimeout(timer)
+                    rejectWait = null
+                    resolve(element)
+                    break
+                }
+            }
+        })
+        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
+    })
+}
+
+function watchForRemoveElement(selector) {
+    return new Promise((resolve, reject) => {
+        let timer = setTimeout(() => {
+            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания удаления элемента "${selector}"`})
+        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+
+        rejectWait = () => {
+            rejectWait = null
+            observer.disconnect()
+            clearTimeout(timer)
+            reject('stopped by user')
+        }
+
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const el of mutation.removedNodes) {
+                    if (el?.matches?.(selector) || el?.querySelector?.(selector)) {
+                        observer.disconnect()
+                        clearTimeout(timer)
+                        rejectWait = null
+                        resolve(el)
+                        return
+                    }
+                }
+            }
+        })
+        observer.observe(document.documentElement, {childList: true, subtree: true})
+    })
+}
+
+// таким уродским костылём ждём когда следующий вопрос 100% прогрузится
+function waitForLoadNextQuestion() {
+    return new Promise((resolve, reject) => {
+        let timer = setTimeout(() => {
+            chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания вопроса'})
+        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+
+        rejectWait = () => {
+            rejectWait = null
+            observer.disconnect()
+            clearTimeout(timer)
+            reject('stopped by user')
+        }
+
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
+                    if (!mutation.target.disabled && mutation.target.closest('.mdc-form-field')) {
+                        observer.disconnect()
+                        clearTimeout(timer)
+                        rejectWait = null
+                        resolve(mutation.target)
+                        break
+                    }
+                }
+            }
+        })
+        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
+    })
+}
+
 async function simulateClick(element, count = 0) {
+    if (stopRunning) return
     if (count > 7) {
         running = false
         port.postMessage({error: 'Не удалось найти кнопку относительно координат'})
@@ -555,20 +669,22 @@ async function simulateClick(element, count = 0) {
     if (!count || count === 3 || count === 6) {
         element.scrollIntoView({block: 'center'})
     }
-    const {x, y} = getRandomCoordinates(element)
+    let coords1 = getRandomCoordinates(element)
     // кликаем именно на элемент который виден в DOM относительно координат
-    const newElement = document.elementFromPoint(x, y)
+    const newElement = document.elementFromPoint(coords1.x, coords1.y)
     // проверяем попали мы на тот элемент или нам что-то мешает
     if (element !== newElement) {
         // если не попали, то шерстим весь DOM и проверяем попали мы на родительский или дочерние элементы
         if (element.contains(newElement)) {
             element = newElement
+            coords1 = getRandomCoordinates(element)
         } else {
             let parentElement = element.parentElement
             let found = false
             while (parentElement) {
                 if (parentElement === newElement) {
                     element = newElement
+                    coords1 = getRandomCoordinates(element)
                     found = true
                     break
                 }
@@ -576,24 +692,26 @@ async function simulateClick(element, count = 0) {
             }
             if (!found) {
                 // TODO ну это просто к какому-ту дерьму всё идёт, иногда эти чёртовы popup'ы выскакивают тогда когда ты этого НЕ ОЖИДАЕШЬ
-                await attemptToClosePopups()
-
+                await attemptToClosePopups(count + 1)
+                console.warn('не удалось найти кнопку, пробуем это сделать повторно')
                 await wait(500)
                 // бывает другие элементы частично налезают на нашу кнопку, поэтому
                 // мы повторными попытками пытаемся подобрать другие координаты
                 await simulateClick(element, count + 1)
+                return
             }
         }
     } else {
         element = newElement
+        coords1 = getRandomCoordinates(element)
     }
-    const {x2, y2} = getRandomCoordinates(element)
-    element.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window, clientX: x2, clientY: y2, screenX: x2, screenY: y2}))
-    if (settings.answerWaitMax) await wait(Math.floor(Math.random() * (500 - 100) + 100))
-    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 1, detail: 1}))
-    if (settings.answerWaitMax) await wait(Math.floor(Math.random() * (250 - 50) + 50))
-    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 0, detail: 1}))
-    element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, buttons: 0, detail: 1}))
+    const coords2 = getRandomCoordinates(element)
+    element.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window, clientX: coords2.x, clientY: coords2.y, screenX: coords2.x, screenY: coords2.y}))
+    if (settings.answerWaitMax) await wait(Math.random() * (500 - 100) + 100)
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window, clientX: coords1.x, clientY: coords1.y, screenX: coords1.x, screenY: coords1.y, buttons: 1, detail: 1}))
+    if (settings.answerWaitMax) await wait(Math.random() * (250 - 50) + 50)
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window, clientX: coords1.x, clientY: coords1.y, screenX: coords1.x, screenY: coords1.y, buttons: 0, detail: 1}))
+    element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window, clientX: coords1.x, clientY: coords1.y, screenX: coords1.x, screenY: coords1.y, buttons: 0, detail: 1}))
 }
 
 function getRandomCoordinates(element, half) {
@@ -603,6 +721,11 @@ function getRandomCoordinates(element, half) {
     let right = box.right
     let top = box.top
     let bottom = box.bottom
+    if (!left && !right && !top && !bottom) {
+        running = false
+        port.postMessage({error: 'Не удалось получить координаты кнопки, возможно эта кнопка пропала неожиданно для расширения из DOM'})
+        throw Error('Не удалось получить координаты кнопки, возможно эта кнопка пропала неожиданно для расширения из DOM')
+    }
     if (half) {
         // вычисляем самую центральную точку элемента
         const xCenter = (box.left + box.right) / 2
@@ -634,36 +757,37 @@ function highlight(element, color) {
     highLightDiv.append(div)
 }
 function getOffset(el) {
-    const rect = el.getBoundingClientRect();
+    const rect = el.getBoundingClientRect()
     return {
         left: rect.left + window.scrollX,
         top: rect.top + window.scrollY
-    };
+    }
 }
 
 function stop() {
     running = false
-    stopRunning = false
+    stopRunning = true
+    if (rejectWait) rejectWait()
     countSaveAnswers = 0
     countAnsweredAnswers = 0
     port.postMessage({running: false, collectAnswers: null})
 }
 
 async function randomWait() {
-    if (settings.clickWaitMax) await wait(Math.floor(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin))
+    if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 }
 
 function wait(ms) {
     return new Promise((resolve, reject) => {
-        rejectWait = () => {
-            stop()
-            clearTimeout(ms)
-            reject('stopped by user')
-        }
-        setTimeout(() => {
+        const timer = setTimeout(() => {
             rejectWait = null
             resolve()
         }, ms)
+        rejectWait = () => {
+            clearTimeout(timer)
+            reject('stopped by user')
+            rejectWait = null
+        }
     })
 }
 
@@ -692,7 +816,7 @@ const observer = new PerformanceObserver((list) => {
             countSaveAnswers = countSaveAnswers + 1
             // console.log('save-answer', countSaveAnswers)
         } else if (entry.name.endsWith('/token')) {
-            chrome.runtime.sendMessage({authData: JSON.parse(localStorage.getItem('rsmu_tokenData')), cabinet: document.location.host.split('.')[0].split('-')[1]})
+            chrome.runtime.sendMessage({authData: JSON.parse(localStorage.getItem('rsmu_tokenData')) || JSON.parse(localStorage.getItem('tokenData')), cabinet: document.location.host.split('.')[0].split('-')[1]})
         }
     }
 })

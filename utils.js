@@ -208,6 +208,10 @@ async function joinDB(json, transaction, status) {
             const topics = []
             for (const topicKey of question.topics) {
                 const topic = await transaction.objectStore('topics').get(topicKey)
+                if (topic == null) {
+                    console.warn('Проблема при объединении баз данных, не найдена тема', topicKey)
+                    continue
+                }
                 topics.push(topic.name)
             }
             for (const topicKey of newQuestion.topics) {
@@ -259,8 +263,3 @@ async function joinDB(json, transaction, status) {
     console.log('Объединение баз данных окончено')
 }
 self.joinDB = joinDB
-
-function wait(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-self.wait = wait

@@ -6,13 +6,17 @@ import '/normalize-text.js'
 
 let db
 let runningTab
+let rejectWait
 let stopRunning = false
 let controller = new AbortController()
+let reloadTabTimer
+let lastResetReloadTabTimer
 let collectAnswers = 0
 let reloaded = 0
 let started = 0
 let startFunc
 let settings
+// let tempCabinet
 
 const new_db = [1, 14]
 const dbVersion = 14
@@ -261,12 +265,14 @@ async function reimportEducationElements() {
                 topic.name = object.name
                 if (!topic.newChange) topic.newChange = 2
             }
+            // TODO временно
+            delete topic.needSearchAnswers
             console.log('Обновлён', topic)
         } else {
             topic = object
             topic.completed = 0
             // TODO временно
-            topic.needSearchAnswers = true
+            delete topic.needSearchAnswers
             topic.newChange = 1
             console.log('Добавлен', topic)
         }
@@ -394,6 +400,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
             chrome.tabs.reload(sender.tab.id)
         }
+        setReloadTabTimer()
     } else if (message.reloadSettings) {
         (async () => {
             await initializeFunc
@@ -415,20 +422,15 @@ chrome.action.onClicked.addListener(async (tab) => {
         chrome.runtime.openOptionsPage()
         return
     }
-    if (runningTab === tab.id || (startFunc && !startFunc.done)) {
-        started = 0
+    if (runningTab || (startFunc && !startFunc.done)) {
         console.warn('Работа расширения остановлена по запросу пользователя')
-        chrome.tabs.sendMessage(tab.id, {stop: true})
-        chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
-        chrome.action.setBadgeText({text: ''})
-        stopRunning = true
-        runningTab = null
-        collectAnswers = null
-        controller.abort()
+        chrome.tabs.sendMessage(runningTab, {stop: true})
+        stop()
     } else {
         let response
         try {
             response = await chrome.tabs.sendMessage(tab.id, {hasTest: true})
+            if (!response) throw Error('Receiving end does not exist')
         } catch (error) {
             if (error.message.includes('Receiving end does not exist')) {
                 showNotification('Ошибка', 'Похоже на данной вкладке открыт НЕ портал НМО (или что-то не относящееся к тестам ОИМ), если это не так - попробуйте обновить страницу')
@@ -450,10 +452,9 @@ async function start(tabId, hasTest, done, hasError) {
         started++
     }
     if (started >= settings.maxReloadTest) {
-        waitUntilState(false)
-        started = 0
         showNotification('Ошибка', 'Слишком много попыток запустить тест')
         chrome.action.setBadgeText({text: 'ERR'})
+        stop(false)
         return
     }
     waitUntilState(true)
@@ -465,24 +466,21 @@ async function start(tabId, hasTest, done, hasError) {
         started = 0
         if (stopRunning) return
         chrome.action.setBadgeText({text: 'ERR'})
+        stop(false)
         return
     }
     if (url === 'null') {
         if (done) {
-            waitUntilState(false)
-            started = 0
             showNotification('Готово', 'Расширение окончил работу')
             chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
             chrome.action.setBadgeText({text: 'DONE'})
-            runningTab = null
-            collectAnswers = null
+            stop(false)
             return
         } else if (!hasTest) {
-            waitUntilState(false)
-            started = 0
             chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
             showNotification('Ошибка', 'На данной странице нет теста или не назначены тесты в настройках')
             chrome.action.setBadgeText({text: 'ERR'})
+            stop(false)
             return
         } else if (hasError) {
             chrome.tabs.reload(tabId)
@@ -495,6 +493,7 @@ async function start(tabId, hasTest, done, hasError) {
     chrome.action.setTitle({title: 'Расширение решает тест'})
     chrome.action.setBadgeText({text: 'ON'})
     runningTab = tabId
+    setReloadTabTimer()
 }
 
 async function checkOrGetTopic() {
@@ -523,20 +522,29 @@ async function checkOrGetTopic() {
                 if (stopRunning) return 'error'
                 console.warn(error)
                 if (error.message.startsWith('Topic error, ')) {
+                    if (error.message === 'Topic error, Уже пройдено') {
+                        // TODO временно
+                        // educationalElement.completed = 1
+                        delete educationalElement.completed
+                        await db.put('topics', educationalElement)
+                        continue
+                    }
                     educationalElement.error = error.message.replace('Topic error, ', '')
                     educationalElement.completed = 2
                     await db.put('topics', educationalElement)
+                    continue
                 } else if (
                     !error.message.startsWith('bad code 5') &&
                     !error.message.startsWith('Не была получена ссылка по теме ') &&
                     error.message !== 'Updated token' &&
                     error.message !== 'signal timed out' &&
-                    error.message !== 'Failed to fetch'
+                    error.message !== 'Failed to fetch' &&
+                    error.message !== 'notFound'
                 ) {
                     showNotification('W Непредвиденная ошибка', error.message)
                     return 'error'
                 }
-                await wait(Math.floor(Math.random() * (30000 - 5000) + 5000))
+                await wait(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
             }
         }
         return url
@@ -545,6 +553,8 @@ async function checkOrGetTopic() {
 }
 
 async function searchEducationalElement(educationalElement, cut, updatedToken) {
+    if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
+
     if (cut) {
         educationalElement.name = educationalElement.name.slice(0, -10)
         console.log('ищем (урезанное название)', educationalElement)
@@ -553,14 +563,15 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     }
 
     const authData = await db.get('other', 'authData')
-    const cabinet = await db.get('other', 'cabinet')
+    let cabinet = await db.get('other', 'cabinet')
+    // if (tempCabinet) cabinet = tempCabinet
 
     let foundEE
     if (educationalElement.id) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${educationalElement.id}/`, {
             headers: {authorization: 'Bearer ' + authData.access_token},
             method: 'GET',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
@@ -584,7 +595,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
                 mainSpecialityNameList: []
             }),
             method: 'POST',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
@@ -600,11 +611,11 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             }
         }
         for (const element of json.elements) {
-            await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+            if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
             response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${element.elementId}/`, {
                 headers: {authorization: 'Bearer ' + authData.access_token},
                 method: 'GET',
-                signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+                signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
             })
             if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
             let json2 = await response.json()
@@ -628,7 +639,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         throw Error('Topic error, Не найдено')
     }
 
-    await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+    if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 
     foundEE.name = normalizeText(foundEE.name)
 
@@ -672,18 +683,27 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id}/plan`, {
             headers: {authorization: 'Bearer ' + authData.access_token},
             method: 'PUT',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
-        await wait(Math.floor(Math.random() * (10000 - 3000) + 3000))
+        if (settings.clickWaitMax && settings.clickWaitMax > 500) {
+            await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
+        } else {
+            await wait(Math.random() * (10000 - 5000) + 5000)
+        }
     } else {
-        if (foundEE.completed) console.warn('данный элемент уже пройден пользователем', foundEE)
+        if (foundEE.completed) {
+            console.warn('данный элемент уже пройден пользователем', foundEE)
+            // TODO мы не можем пропустить открытие теста не смотря на то что оно уже пройдено
+            //  так как иногда бывает зависание теста (с пропажей кнопок получения варианта, вперёд и назад)
+            // throw Error('Topic error, Уже пройдено')
+        }
     }
 
     let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id }/open-link?backUrl=https%3A%2F%2F${cabinet}.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan`, {
         headers: {authorization: 'Bearer ' + authData.access_token},
         method: 'GET',
-        signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+        signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
     })
     if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
     let json = await response.json()
@@ -697,6 +717,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     if (!new URL(json.url).host.includes('edu.rosminzdrav.ru')) {
         throw Error('Topic error, Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
     }
+    // tempCabinet = null
     return json.url
 }
 
@@ -709,7 +730,7 @@ async function checkErrors(json, updatedToken) {
                 const response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=${authData.refresh_token}`, {
                     headers: {"Content-Type": "application/x-www-form-urlencoded", Authorization: 'Basic ' + btoa(`client:secret`)},
                     method: 'POST',
-                    signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+                    signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
                 })
                 if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 const json2 = await response.json()
@@ -725,18 +746,22 @@ async function checkErrors(json, updatedToken) {
         }
         console.error(json)
         throw Error('НМО выдал ошибку при попытке поиска ' + JSON.stringify(json).slice(0, 150))
-    }
+    }/* else if (json.globalErrors?.[0]?.code === 'notFound') {
+        // TODO кривой костыль если у нас этот ИОМ можно пройти только в другом кабинете (по образованию)
+        if (!tempCabinet) {
+            tempCabinet = 'nmfo-spo'
+            throw Error('notFound')
+        } else {
+            tempCabinet = null
+            throw Error('Topic error, Не найдено')
+        }
+    }*/
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     if (runningTab === tabId) {
         console.warn('Работа расширения остановлена, пользователь закрыл вкладку')
-        runningTab = null
-        collectAnswers = null
-        stopRunning = true
-        controller.abort()
-        chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
-        chrome.action.setBadgeText({text: ''})
+        stop()
     }
 })
 
@@ -744,6 +769,7 @@ chrome.runtime.onConnect.addListener((port) => {
     // runningTab = port.sender.tab.id
     port.onMessage.addListener(async (message) => {
         await initializeFunc
+        setReloadTabTimer()
         if (message.question) {
             let topicKey
             const topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
@@ -1128,8 +1154,24 @@ chrome.runtime.onConnect.addListener((port) => {
                 // chrome.action.setBadgeText({text: 'ON'})
             }
         } else if (message.done) {
-            const educationalElement = await db.getFromIndex('topics', 'name', message.topic)
+            let educationalElement = await db.getFromIndex('topics', 'name', message.topic)
             console.log('закончено', message.topic)
+            // TODO иногда название темы отличается того что нам приходит в json
+            let found = false
+            if (message.topic.includes('«') || message.topic.includes('»')) {
+                message.topic = message.topic.replaceAll('«', '"').replaceAll('»', '"')
+                const educationalElement2 = await db.getFromIndex('topics', 'name', message.topic)
+                if (educationalElement2) {
+                    found = true
+                    delete educationalElement2.completed
+                    await db.put('topics', educationalElement2)
+                }
+            }
+            // TODO это конечно безобразие но другого варианта нет как проходить тесты в которых названии не соответсвует
+            //  данный костыль чревато тем что если пользователь откроет сам сторонний тест то расширение ошибочно засчитает другой тест как завершённый
+            if (!educationalElement && !found) {
+                educationalElement = await db.getFromIndex('topics', 'completed', 0)
+            }
             if (educationalElement) {
                 if (message.error) {
                     showNotification('Предупреждение', message.error)
@@ -1165,6 +1207,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 console.error(error)
             }
         }
+        waitUntilState(false)
     })
 
     self.port = port
@@ -1220,7 +1263,7 @@ async function searchOnAI(question, answerHash) {
                 ]
             }),
             method: 'POST',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.floor(Math.random() * (90000 - 30000) + 30000)), controller.signal])
+            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         let json = await response.json()
         console.log('Ответ от ИИ получен\n', json.choices[0].message.content)
@@ -1471,6 +1514,49 @@ function showNotification(title, message) {
     console.log(title, message)
     chrome.action.setTitle({title: message})
     chrome.notifications.create({type: 'basic', message, title, iconUrl: 'img/icon128.png'})
+}
+
+function wait(ms) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            rejectWait = null
+            resolve()
+        }, ms)
+        rejectWait = () => {
+            rejectWait = null
+            clearTimeout(timer)
+            reject('stopped by user')
+        }
+    })
+}
+
+function setReloadTabTimer() {
+    if (Date.now() - lastResetReloadTabTimer <= 5000) return
+    clearTimeout(reloadTabTimer)
+    reloadTabTimer = setTimeout(async () => {
+        if (stopRunning || !runningTab) return
+        console.warn('Похоже вкладка совсем зависла, делаем перезапуск теста')
+        const tab = await chrome.tabs.discard(runningTab)
+        runningTab = tab.id
+        startFunc = start(runningTab, true, false, true)
+        startFunc.finally(() => startFunc.done = true)
+        showNotification('Предупреждение', 'Похоже вкладка совсем зависла, делаем перезапуск теста')
+    }, Math.max(180 * 1000, settings.timeoutReloadTabMax + settings.clickWaitMax + 30000, settings.clickWaitMax, settings.answerWaitMax + settings.clickWaitMax + 30000))
+    lastResetReloadTabTimer = Date.now()
+}
+
+function stop(resetAction=true) {
+    runningTab = null
+    collectAnswers = null
+    stopRunning = true
+    started = 0
+    if (rejectWait) rejectWait()
+    controller.abort()
+    waitUntilState(false)
+    clearTimeout(reloadTabTimer)
+    if (!resetAction) return
+    chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
+    chrome.action.setBadgeText({text: ''})
 }
 
 // тупорылый костыль (официально одобренный самим гуглом) на то что б Service Worker не отключался во время выполнения кода
