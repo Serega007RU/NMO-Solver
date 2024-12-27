@@ -392,7 +392,7 @@ async function start(collectAnswers) {
         const waitNext = watchForChangeElement('.v-slot-iom-elementbox-text')
         await simulateClick(next)
         await waitNext
-        // await wait(250)
+        await wait(500)
         await randomWait()
         start()
     } else {

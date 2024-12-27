@@ -446,6 +446,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 async function start(tabId, hasTest, done, hasError) {
     reloaded = 0
+    clearTimeout(reloadTabTimer)
     if (done) {
         started = 0
     } else {
@@ -686,6 +687,13 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
+        if (!response.ok) {
+            let json = await response.json()
+            await checkErrors(json, updatedToken)
+            if (json.globalErrors?.[0]?.code === 'ELEMENT_CANNOT_BE_ADDED_TO_PLAN_EXCEPTION') {
+                throw Error('Topic error, ' + JSON.stringify(json))
+            }
+        }
         if (settings.clickWaitMax && settings.clickWaitMax > 500) {
             await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
         } else {
@@ -1531,6 +1539,7 @@ function wait(ms) {
 }
 
 function setReloadTabTimer() {
+    if (settings?.mode === 'manual' || settings?.mode === 'disabled') return
     if (Date.now() - lastResetReloadTabTimer <= 5000) return
     clearTimeout(reloadTabTimer)
     reloadTabTimer = setTimeout(async () => {
