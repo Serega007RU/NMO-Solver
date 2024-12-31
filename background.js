@@ -294,6 +294,58 @@ async function searchDupQuestions() {
     }
 }
 
+self.fixDupTopics = fixDupTopics
+async function fixDupTopics() {
+    let transaction
+    try {
+        transaction = db.transaction(['questions', 'topics'], 'readwrite')
+        let cursor = await transaction.objectStore('topics').openCursor()
+        while (cursor) {
+            const topic = cursor.value
+            if (!topic.name) {
+                console.warn('нет имени!', topic)
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
+                continue
+            }
+            topic.name = normalizeText(topic.name)
+            const found = await transaction.objectStore('topics').index('name').get(topic.name)
+            if (found && found.key !== topic.key) {
+                console.warn('Найден дублирующий topic, он был удалён и объединён', found)
+                await transaction.objectStore('topics').delete(found.key)
+                if (topic.id !== found.id) {
+                    topic.id = found.id
+                    if (!topic.newChange) topic.newChange = 2
+                }
+                if (topic.name !== found.name) {
+                    topic.name = found.name
+                    if (!topic.newChange) topic.newChange = 2
+                }
+                if (topic.code !== found.number) {
+                    topic.code = found.number
+                    if (!topic.newChange) topic.newChange = 2
+                }
+                await cursor.update(topic)
+
+                let cursor2 = await transaction.objectStore('questions').index('topics').openCursor(found.key)
+                while (cursor2) {
+                    const question = cursor2.value
+                    question.topics.splice(question.topics.indexOf(found.key), 1)
+                    if (!question.topics.includes(topic.key)) question.topics.push(topic.key)
+                    await cursor2.update(question)
+                    // noinspection JSVoidFunctionReturnValueUsed
+                    cursor2 = await cursor2.continue()
+                }
+            }
+            // noinspection JSVoidFunctionReturnValueUsed
+            cursor = await cursor.continue()
+        }
+    } catch (error) {
+        transaction.abort()
+        console.error(error)
+    }
+}
+
 self.getCorrectAnswers = getCorrectAnswers
 async function getCorrectAnswers(topic, index) {
     topic = topic.toLowerCase()
@@ -1570,7 +1622,7 @@ function stop(resetAction=true) {
 
 // тупорылый костыль (официально одобренный самим гуглом) на то что б Service Worker не отключался во время выполнения кода
 async function waitUntil(promise) {
-    const keepAlive = setInterval(chrome.runtime.getPlatformInfo, 25 * 1000)
+    const keepAlive = setInterval(chrome.runtime.getPlatformInfo, 10 * 1000)
     try {
         await promise
     } finally {
@@ -1581,7 +1633,7 @@ let timerKeepAlive
 function waitUntilState(state) {
     if (state) {
         if (!timerKeepAlive) {
-            timerKeepAlive = setInterval(chrome.runtime.getPlatformInfo, 25 * 1000)
+            timerKeepAlive = setInterval(chrome.runtime.getPlatformInfo, 10 * 1000)
         }
     } else {
         clearInterval(timerKeepAlive)

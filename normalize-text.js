@@ -67,6 +67,9 @@ const LATIN_TO_VIEW_CYRILLIC = {
     X: 'Х',
     x: 'х',
     'ͯ': 'х', // 879	U+036F	CD AF	ͯ	Combining Latin Small Letter X
+    '«': '"',
+    '»': '"',
+    '–': '-',
 }
 
 function latinToViewCyrillic(input) {
@@ -76,13 +79,13 @@ function latinToViewCyrillic(input) {
 }
 
 function normalizeText(str) {
-    return latinToViewCyrillic(str)
-        .trim()
-        .toLowerCase()
-        .replaceAll('<suр>', '')
-        .replaceAll('</suр>', '')
-        .replaceAll(' - итоговое тестирование', '')
-        .replaceAll(' - предварительное тестирование', '')
-        .replaceAll(' - входное тестирование', '')
+    let text = latinToViewCyrillic(str).trim().toLowerCase()
+    text = text.replaceAll('<suр>', '')
+    text = text.replaceAll('</suр>', '')
+    if (text.endsWith(' - итоговое тестирование')) text = text.replaceAll(' - итоговое тестирование', '')
+    if (text.endsWith(' - предварительное тестирование')) text = text.replaceAll(' - предварительное тестирование', '')
+    if (text.endsWith(' - входное тестирование')) text = text.replaceAll(' - входное тестирование', '')
+    if (text.endsWith(' - тестирование')) text = text.replaceAll(' - тестирование', '')
+    return text
 }
 self.normalizeText = normalizeText

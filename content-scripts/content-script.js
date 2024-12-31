@@ -17,7 +17,7 @@ function osReceiveStatus(message) {
     if (message.settings) settings = message.settings
     if (message.running) {
         stopRunning = false
-        nextRepeat = 0
+        startRepeat = 0
         running = true
         start(message.collectAnswers)
     }
@@ -37,7 +37,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
             chrome.runtime.sendMessage({reloadPage: true})
         } else {
             stopRunning = false
-            nextRepeat = 0
+            startRepeat = 0
             running = true
             start()
         }
@@ -73,12 +73,12 @@ async function portListener(message) {
     await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"])')
 
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
-    if (!settings.goodScore && topic.includes(' - Предварительное тестирование') || topic.includes(' - Входное тестирование')) {
+    if (!settings.goodScore && topic.includes(' - Предварительное тестирование')) {
         // сразу нажимаем "Завершить тестирование"
         await simulateClick(document.querySelector('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])'))
         await randomWait()
         // подтверждаем завершение теста
-        simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
+        await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
         // ждём когда пропадёт эта кнопка (типа всё прогрузится)
         await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
         runTest()
@@ -165,7 +165,7 @@ async function nextQuestion() {
             await waitSendAnswer()
             await randomWait()
             // подтверждаем завершение теста
-            simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
+            await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
             await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
         } else {
@@ -195,7 +195,7 @@ async function attemptToClosePopups(count = 0) {
             await waitRemove
         } else if (popup.querySelector('[class*="v-Notification"]')) {
             const waitRemove = watchForRemoveElement('[class*="v-Notification"]')
-            simulateClick(popup.querySelector('[class*="v-Notification"]'), count)
+            await simulateClick(popup.querySelector('[class*="v-Notification"]'), count)
             await randomWait()
             popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
             popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-out-fade'}))
@@ -207,7 +207,7 @@ async function attemptToClosePopups(count = 0) {
     }
 }
 
-let nextRepeat = 0
+let startRepeat = 0
 let hasISTask = false
 let hasBack = false
 async function start(collectAnswers) {
@@ -222,6 +222,12 @@ async function start(collectAnswers) {
         port.onDisconnect.addListener(() => port = null)
     }
     if (collectAnswers) port.postMessage({collectAnswers})
+
+    startRepeat++
+    if (startRepeat > settings.maxAttemptsNext) {
+        chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток запуска теста или перейти на следующий этап'})
+        return
+    }
 
     countSaveAnswers = 0
     countAnsweredAnswers = 0
@@ -261,6 +267,14 @@ async function start(collectAnswers) {
 
     await attemptToClosePopups()
 
+    if (document.querySelector('.v-slot-h1')?.textContent.toLowerCase().includes('вариант №')) {
+        let waitReaction = watchForChangeElement('.v-widget')
+        await simulateClick(Array.from(document.querySelectorAll('.v-button-caption')).find(el => el.textContent === 'Завершить') || Array.from(document.querySelectorAll('.v-button-caption')).find(el => el.textContent === 'Вернуться к обучению'))
+        await waitReaction
+        start(collectAnswers)
+        return
+    }
+
     if (document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Скачать сертификат' || document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Ожидание выгрузки результатов...') {
         // TODO не всегда получается дождаться скачивания сертификата
         // await watchForText('.v-align-center .v-button-caption', 'Скачать сертификат')
@@ -287,7 +301,7 @@ async function start(collectAnswers) {
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
             if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
                 port.postMessage({done: true, topic, hasTest: true})
-                nextRepeat = 0
+                startRepeat = 0
                 start()
             } else {
                 port.postMessage({done: true, topic})
@@ -307,26 +321,34 @@ async function start(collectAnswers) {
     let countGood = 0
     const testName = document.querySelector('.c-groupbox-caption-iom-elementbox-text')?.textContent?.trim()
     // если мы видим список вариантов (тестов), анализируем их
-    if (document.querySelector('.c-table-clickable-cell')) {
+    if (document.querySelector('.v-table-cell-content:first-child')) {
         let index = 0
-        for (const variant of document.querySelectorAll('.c-table-clickable-cell')) {
+        for (const variant of document.querySelectorAll('.v-table-cell-content:first-child')) {
             index = index + 1
             const variantText = variant.textContent.trim()
-            if (collectAnswers) {
-                if (variantText.includes('оценка ') && collectAnswers === index) {
+            if (variantText.toLowerCase().includes('задача')) {
+                if (!variantText.toLowerCase().includes('оценка')) {
+                    await simulateClick(variant.querySelector('span'))
+                    start(collectAnswers)
+                    return
+                } else {
+                    hasSuccessTest = true
+                }
+            } else if (collectAnswers) {
+                if (variantText.includes('оценка ') && !variantText.includes('оценка 2') && collectAnswers === index) {
                     console.log('смотрим вариант', collectAnswers, variantText)
                     collectAnswers = collectAnswers + 1
                     port.postMessage({collectAnswers})
-                    variant.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window}))
+                    await simulateClick(variant.querySelector('span'))
                     runTest()
                     return
                 }
             } else if (variantText.includes(' - не завершен')) {
                 // нажимаем на найденный тест
-                await simulateClick(variant)
+                await simulateClick(variant.querySelector('span'))
                 runTest()
                 return
-            } else if (testName === 'Предварительное тестирование' || testName === 'Входное тестирование') {
+            } else if (testName === 'Предварительное тестирование') {
                 hasSuccessTest = true
             } else if (settings.goodScore) {
                 if (variantText.includes('оценка 3')) {
@@ -361,17 +383,27 @@ async function start(collectAnswers) {
         return
     }
 
-    if (testName === 'Задача' || testName === 'Интерактивные ситуационные задачи' || testName === 'Интерактивная ситуационная задача' || testName === 'Задачи для самоподготовки') {
+    if (testName === 'Задача' ||
+        testName === 'Интерактивные ситуационные задачи' ||
+        testName === 'Интерактивная ситуационная задача' ||
+        testName === 'Задачи для самоподготовки' ||
+        document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи'
+    ) {
         hasISTask = true
     }
 
     const buttonNewVariant = document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
-    if (!hasISTask && document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи') hasISTask = true
-    if (!hasSuccessTest && buttonNewVariant && !hasISTask) {
+    if (!hasSuccessTest && buttonNewVariant) {
         await wait(500)
         // если тест не запущен и нет пройденного, то получаем новый вариант
         await simulateClick(buttonNewVariant)
         await attemptToClosePopups()
+        if (hasISTask) {
+            hasISTask = false
+            await watchForChangeElement('.v-table')
+            start(collectAnswers)
+            return
+        }
         // ждём когда появится новый тест и открываем его
         const variant = await watchForText('.c-table-clickable-cell', ' - не завершен')
         await randomWait()
@@ -384,15 +416,10 @@ async function start(collectAnswers) {
     // Если есть кнопка "Далее" и по кругу перезапускаем данную функцию
     const next = document.querySelector('.v-button-blue-button.v-button-icon-align-right:not([aria-disabled="true"])')
     if (next) {
-        nextRepeat++
-        if (nextRepeat > settings.maxAttemptsNext) {
-            chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток переключиться на следующий этап (вперёд)'})
-            return
-        }
         const waitNext = watchForChangeElement('.v-slot-iom-elementbox-text')
         await simulateClick(next)
         await waitNext
-        await wait(500)
+        // await wait(250)
         await randomWait()
         start()
     } else {
@@ -442,7 +469,7 @@ async function runTest() {
     }
 
     // тут мы типо думаем над вопросом, от 3 до 30 секунд
-    if (settings.answerWaitMax && !topic.includes(' - Предварительное тестирование') && !topic.includes(' - Входное тестирование')) {
+    if (settings.answerWaitMax && !topic.includes(' - Предварительное тестирование')) {
         await wait(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin)
     }
 
