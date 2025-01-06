@@ -18,10 +18,10 @@ let startFunc
 let settings
 // let tempCabinet
 
-const new_db = [1, 14]
+const new_db = [1]
 const dbVersion = 14
 let firstInit = null
-self.initStage = {stage1: {current: 0, max: 0, percent: 0}, stage2: {current: 0, max: 0, percent: 0}, stage3: {current: 0, max: 0, percent: 0}}
+self.initStage = {stage1: {current: 0, max: 0, percent: '0.0'}, stage2: {current: 0, max: 0, percent: '0.0'}, stage3: {current: 0, max: 0, percent: '0.0'}}
 self.lastSend = null
 const initializeFunc = init()
 waitUntil(initializeFunc)
@@ -280,17 +280,152 @@ async function reimportEducationElements() {
     }
 }
 
-self.searchDupQuestions = searchDupQuestions
-async function searchDupQuestions() {
-    let transaction = db.transaction('questions').objectStore('questions')
-    let cursor = await transaction.openCursor()
-    while (cursor) {
-        const count = await transaction.index('question').count(cursor.value.question)
-        if (count > 1) {
-            console.warn('Найден дубликат', cursor.value)
+self.resetNewChange = resetNewChange
+async function resetNewChange() {
+    let transaction
+    try {
+        transaction = db.transaction(['questions', 'topics'], 'readwrite')
+        let cursor = await transaction.objectStore('questions').index('newChange').openCursor(IDBKeyRange.lowerBound(1))
+        while (cursor) {
+            const value = cursor.value
+            delete value.newChange
+            await cursor.update(value)
+            // noinspection JSVoidFunctionReturnValueUsed
+            cursor = await cursor.continue()
+            if (!cursor) {
+                cursor = await transaction.objectStore('topics').index('newChange').openCursor(IDBKeyRange.lowerBound(1))
+            }
         }
-        // noinspection JSVoidFunctionReturnValueUsed
-        cursor = await cursor.continue()
+    } catch (error) {
+        transaction.abort()
+        console.error(error)
+    }
+}
+
+self.fixDupQuestions = fixDupQuestions
+async function fixDupQuestions() {
+    let transaction
+    try {
+        transaction = db.transaction('questions', 'readwrite')
+
+        {
+            console.log('этап 1')
+            let cursor = await transaction.store.openCursor()
+            while (cursor) {
+                const question = cursor.value
+
+                const newQuestion = normalizeText(question.question)
+                if (question.question !== newQuestion) {
+                    console.log('Исправлено название', question)
+                    question.question = newQuestion
+                }
+
+                for (const answerHash of Object.keys(question.answers)) {
+                    const newAnswers = []
+                    for (const answer of question.answers[answerHash].answers) {
+                        newAnswers.push(normalizeText(answer))
+                    }
+                    newAnswers.sort()
+                    const newAnswer = question.answers[answerHash]
+                    const newAnswerHash = objectHash(newAnswers)
+
+                    const oldQuestion = JSON.stringify(question)
+                    delete question.answers[answerHash]
+                    // TODO мы удаляем комбинации так как меняется сортировка вопросов из-за разного регистра букв
+                    delete newAnswer.combinations
+                    if (question.answers[newAnswerHash]) {
+                        console.warn('Найдены дублирующиеся ответы', oldQuestion, question)
+                    }
+
+                    newAnswer.answers = newAnswers
+                    question.answers[newAnswerHash] = newAnswer
+
+                    if (question.correctAnswers[answerHash]) {
+                        const newCorrectAnswers = []
+                        for (const answer of question.correctAnswers[answerHash]) {
+                            newCorrectAnswers.push(normalizeText(answer))
+                        }
+                        newCorrectAnswers.sort()
+                        delete question.correctAnswers[answerHash]
+                        question.correctAnswers[newAnswerHash] = newCorrectAnswers
+                    }
+                }
+
+                await cursor.update(question)
+
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
+            }
+        }
+
+        {
+            console.log('этап 2')
+            let cursor = await transaction.store.openCursor()
+            while (cursor) {
+                const count = await transaction.store.index('question').count(cursor.value.question)
+                if (count > 1) {
+                    console.warn('Найден дубликат', cursor.value)
+                    let cursor2 = await transaction.store.index('question').openCursor(cursor.value.question)
+                    const question = cursor2.value
+                    // noinspection JSVoidFunctionReturnValueUsed
+                    cursor2 = await cursor2.continue()
+                    let changed = false
+                    while (cursor2) {
+                        for (const answersHash of Object.keys(cursor2.value.answers)) {
+                            if (!question.answers[answersHash] || (!question.answers[answersHash].type && cursor2.value.answers[answersHash].type)) {
+                                changed = true
+                                question.answers[answersHash] = cursor2.value.answers[answersHash]
+                            }
+                            if (!question.correctAnswers[answersHash] && cursor2.value.correctAnswers[answersHash]) {
+                                changed = true
+                                question.correctAnswers[answersHash] = cursor2.value.correctAnswers[answersHash]
+                            }
+                        }
+
+                        if (cursor2.value.answers['unknown']) {
+                            if (question.answers['unknown'] == null) question.answers['unknown'] = []
+                            for (const answer of cursor2.value.answers['unknown']) {
+                                if (!question.answers['unknown'].includes(answer)) {
+                                    changed = true
+                                    question.answers['unknown'].push(answer)
+                                }
+                            }
+                        }
+                        if (cursor2.value.correctAnswers['unknown']) {
+                            if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
+                            for (const answer of cursor2.value.correctAnswers['unknown']) {
+                                if (!question.correctAnswers['unknown'].includes(answer)) {
+                                    changed = true
+                                    question.correctAnswers['unknown'].push(answer)
+                                }
+                            }
+                        }
+
+                        for (const topic of cursor2.value.topics) {
+                            if (!question.topics.includes(topic)) {
+                                changed = true
+                                question.topics.push(topic)
+                            }
+                        }
+
+                        // console.warn('Удалено', cursor2.value)
+                        await cursor2.delete()
+
+                        // noinspection JSVoidFunctionReturnValueUsed
+                        cursor2 = await cursor2.continue()
+                    }
+                    if (changed) {
+                        console.warn('Дубликат объединён в', question)
+                        await cursor.update(question)
+                    }
+                }
+                // noinspection JSVoidFunctionReturnValueUsed
+                cursor = await cursor.continue()
+            }
+        }
+    } catch (error) {
+        transaction.abort()
+        console.error(error)
     }
 }
 
@@ -308,8 +443,8 @@ async function fixDupTopics() {
                 cursor = await cursor.continue()
                 continue
             }
-            topic.name = normalizeText(topic.name)
-            const found = await transaction.objectStore('topics').index('name').get(topic.name)
+            const newName = normalizeText(topic.name)
+            const found = await transaction.objectStore('topics').index('name').get(newName)
             if (found && found.key !== topic.key) {
                 console.warn('Найден дублирующий topic, он был удалён и объединён', found)
                 await transaction.objectStore('topics').delete(found.key)
@@ -318,8 +453,10 @@ async function fixDupTopics() {
                     if (!topic.newChange) topic.newChange = 2
                 }
                 if (topic.name !== found.name) {
-                    topic.name = found.name
+                    topic.name = normalizeText(found.name)
                     if (!topic.newChange) topic.newChange = 2
+                } else if (topic.name) {
+                    topic.name = normalizeText(topic.name)
                 }
                 if (topic.code !== found.number) {
                     topic.code = found.number
@@ -336,6 +473,10 @@ async function fixDupTopics() {
                     // noinspection JSVoidFunctionReturnValueUsed
                     cursor2 = await cursor2.continue()
                 }
+            } else if (topic.name !== newName) {
+                console.warn('Исправлено название', topic)
+                topic.name = newName
+                await cursor.update(topic)
             }
             // noinspection JSVoidFunctionReturnValueUsed
             cursor = await cursor.continue()
@@ -397,14 +538,14 @@ function sendStage() {
     let changed
     for (let x=1; x<=3; x++) {
         const stage = self.initStage['stage' + x]
-        const percent = (100 * stage.current / stage.max) | 0
+        const percent = ((Math.floor((100 * stage.current / stage.max) * 10) / 10) || 0).toFixed(1)
         if (stage.percent !== percent) {
             self.initStage['stage' + x].percent = percent
             changed = percent
         }
     }
-    if (changed === 100 || (changed && Date.now() - self.lastSend >= 500)) {
-        console.log(self.initStage)
+    if (changed === '100.0' || (changed && Date.now() - self.lastSend >= 500)) {
+        console.log(JSON.stringify(self.initStage).replaceAll('},"', '},\n"'))
         self.lastSend = Date.now();
         (async () => {
             try {
@@ -1216,20 +1357,9 @@ chrome.runtime.onConnect.addListener((port) => {
         } else if (message.done) {
             let educationalElement = await db.getFromIndex('topics', 'name', message.topic)
             console.log('закончено', message.topic)
-            // TODO иногда название темы отличается того что нам приходит в json
-            let found = false
-            if (message.topic.includes('«') || message.topic.includes('»')) {
-                message.topic = message.topic.replaceAll('«', '"').replaceAll('»', '"')
-                const educationalElement2 = await db.getFromIndex('topics', 'name', message.topic)
-                if (educationalElement2) {
-                    found = true
-                    delete educationalElement2.completed
-                    await db.put('topics', educationalElement2)
-                }
-            }
             // TODO это конечно безобразие но другого варианта нет как проходить тесты в которых названии не соответсвует
             //  данный костыль чревато тем что если пользователь откроет сам сторонний тест то расширение ошибочно засчитает другой тест как завершённый
-            if (!educationalElement && !found) {
+            if (!educationalElement && !message.hasTest) {
                 educationalElement = await db.getFromIndex('topics', 'completed', 0)
             }
             if (educationalElement) {

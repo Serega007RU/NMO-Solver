@@ -70,6 +70,7 @@ const LATIN_TO_VIEW_CYRILLIC = {
     '«': '"',
     '»': '"',
     '–': '-',
+    '—': '-'
 }
 
 function latinToViewCyrillic(input) {
@@ -86,6 +87,7 @@ function normalizeText(str) {
     if (text.endsWith(' - предварительное тестирование')) text = text.replaceAll(' - предварительное тестирование', '')
     if (text.endsWith(' - входное тестирование')) text = text.replaceAll(' - входное тестирование', '')
     if (text.endsWith(' - тестирование')) text = text.replaceAll(' - тестирование', '')
+    text = text.trim()
     return text
 }
 self.normalizeText = normalizeText
