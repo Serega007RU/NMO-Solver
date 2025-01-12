@@ -25,9 +25,7 @@
 		"tabs"
 	],
 	"host_permissions": [
-		"https://*.edu.rosminzdrav.ru/*",
-		"https://24forcare.com/*",
-		"https://reshnmo.ru/*"
+		"https://*.edu.rosminzdrav.ru/*"
 	],
 	"action": {
 		"default_title": "Нажмите что бы запустить"

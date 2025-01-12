@@ -11,39 +11,10 @@
 <body>
 <div class="loading">
     <div id="LoadingText">Загрузка...</div>
-    <div id="initializing" style="display: none">
-        Идёт инициализация<br>
-        локальной базы данных расширения<br>
-        пожалуйста подождите<br>
-        это может занять около 5-ти минут<br><br>
-        Этап 1<br>
-        <div id="percent1">Прогресс: 0.0%</div>
-        <div id="progress1">Загружено 0/0</div><br><br>
-        Этап 2<br>
-        <div id="percent2">Прогресс: 0.0%</div>
-        <div id="progress2">Загружено 0/0</div><br><br>
-        Этап 3<br>
-        <div id="percent3">Прогресс: 0.0%</div>
-        <div id="progress3">Загружено 0/0</div><br><br>
-    </div>
     <img src="/img/spinner.svg" alt="loading">
 </div>
 <div class="main" style="display: none">
     <header>
-        <div class="export-import">
-            <label for="importdb">
-                <img src="/img/import.svg" alt="import">
-                <div>Импорт БД (Объединить)</div>
-                <span class="status"></span>
-            </label>
-            <input id="importdb" type="file" accept="application/json">
-            <label for="exportdb">
-                <img src="/img/export.svg" alt="export">
-                <div>Экспорт БД</div>
-                <span class="status"></span>
-            </label>
-            <input id="exportdb">
-        </div>
         <h1 class="nav-head">Режимы работы</h1>
         <nav>
             <button data-block="disabled">Отключено</button>

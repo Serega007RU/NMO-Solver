@@ -54,7 +54,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 async function portListener(message) {
     if (settings.mode === 'manual') {
         if (statusBody && !running) {
-            if (message.answers) {
+            if (message.answers && (!cachedQuestion || cachedQuestion.question === message.question.question)) {
                 cachedAnswers = message.answers
                 cachedQuestion = message.question
                 cachedCorrect = message.correct
@@ -62,7 +62,7 @@ async function portListener(message) {
                 if (document.querySelector('.question-inner-html-text')) {
                     highlightAnswers()
                 }
-            } else {
+            } else if (message.stats) {
                 statusBody.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
             }
         }
@@ -494,7 +494,7 @@ function sendQuestion() {
     if (statusBody) {
         cachedAnswers = null
         cachedQuestion = question
-        statusBody.textContent = ''
+        statusBody.textContent = 'Обращение к серверу с ответами...'
     }
     port.postMessage({question})
 }

@@ -1,6 +1,5 @@
-import { openDB, deleteDB } from '/libs/idb.js';
+import { openDB } from '/libs/idb.js';
 import { default as objectHash } from '/libs/object-hash.js';
-import { JSDOM } from '/libs/jsdom.js'; // TODO для меньшей нагрузки следует эту реализацию заменить на API chrome.offscreen (ну и говно-код же получится с его использованием)
 import '/utils.js'
 import '/normalize-text.js'
 
@@ -18,43 +17,12 @@ let startFunc
 let settings
 // let tempCabinet
 
-const new_db = [1]
-const dbVersion = 14
-let firstInit = null
-self.initStage = {stage1: {current: 0, max: 0, percent: '0.0'}, stage2: {current: 0, max: 0, percent: '0.0'}, stage3: {current: 0, max: 0, percent: '0.0'}}
-self.lastSend = null
+const dbVersion = 15
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
-    // вся эта хрень с бд 'check' нужна, что б при инициализации или обновлении бд мы предварительно загрузили данные из json'ов
-    let dbCheck = await openDB('check', dbVersion, {upgrade: (db, oldVersion) => firstInit = oldVersion})
-    dbCheck.close()
-    const jsons = []
-    if (firstInit !== null) {
-        await deleteDB('check')
-        if (firstInit !== 0) {
-            dbCheck = await openDB('check', firstInit)
-            dbCheck.close()
-        }
-        for (const ver of new_db) {
-            if (firstInit + 1 <= ver) {
-                self.initStage.stage1.max++
-            }
-        }
-        sendStage()
-        for (const ver of new_db) {
-            if (firstInit + 1 <= ver) {
-                const response = await fetch(chrome.runtime.getURL(`data/nmo_db_${ver}.json`))
-                const json = await response.json()
-                jsons.push(json)
-                self.initStage.stage1.current++
-                sendStage()
-            }
-        }
-    }
     db = await openDB('nmo', dbVersion, {upgrade})
-    jsons.length = 0
     self.db = db
     async function upgrade(db, oldVersion, newVersion, transaction) {
         if (oldVersion !== newVersion) {
@@ -62,20 +30,15 @@ async function init() {
         }
 
         if (oldVersion === 0) {
-            firstInit = true
-            const questions = db.createObjectStore('questions', {autoIncrement: true})
+            const questions = db.createObjectStore('questions', {autoIncrement: true, keyPath: '_id'})
             questions.createIndex('question', 'question', {unique: true})
             questions.createIndex('topics', 'topics', {multiEntry: true})
-            // 1 - просто изменение, 2 - новый ответ
-            questions.createIndex('newChange', 'newChange')
-            const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: 'key'})
+            const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: '_id'})
             topics.createIndex('name', 'name')
             // 0 - не выполнено, 1 - выполнено, 2 - есть ошибки
             topics.createIndex('completed', 'completed')
             topics.createIndex('code', 'code', {unique: true})
             topics.createIndex('id', 'id', {unique: true})
-            // 1 - новая тема, 2 - есть изменения (да, немного не логично по сравнению с questions)
-            topics.createIndex('newChange', 'newChange')
             const other = db.createObjectStore('other')
 
             await other.put({
@@ -91,81 +54,7 @@ async function init() {
                 timeoutReloadTabMin: 15000,
                 timeoutReloadTabMax: 90000
             }, 'settings')
-
-            for (const json of jsons) {
-                self.initStage.stage2.max += json.questions.length + json.topics.length
-                self.initStage.stage3.max += json.questions.length + json.topics.length
-            }
-            sendStage()
-            const promises = []
-            function onComplete() {
-                self.initStage.stage3.current++
-                sendStage()
-            }
-
-            for (const question of jsons[0].questions) {
-                const promise = questions.add(question)
-                promises.push(promise)
-                promise.finally(onComplete)
-                self.initStage.stage2.current++
-                if (self.initStage.stage2.current % 10000 === 0) {
-                    // TODO таким вот тупорылым костылём мы избавляемся от провисания и дальнейшего схлопывания фонового процесса из-за ограничения по lifetime Serice Worker
-                    //  waitUntil даже не помогает, всё из-за провисания
-                    await questions.get(0)
-                }
-                sendStage()
-            }
-
-            for (const topic of jsons[0].topics) {
-                topics.put(topic)
-                const promise = topics.put(topic)
-                promises.push(promise)
-                promise.finally(onComplete)
-                self.initStage.stage2.current++
-                if (self.initStage.stage2.current % 10000 === 0) {
-                    await questions.get(0)
-                }
-                sendStage()
-            }
-
-            await Promise.all(promises)
-
-            let firstTemp = true
-            for (const json of jsons) {
-                if (firstTemp) {
-                    firstTemp = false
-                    continue
-                }
-                await joinDB(json, transaction)
-            }
-
-            dbCheck = await openDB('check', dbVersion)
-            dbCheck.close()
-
-            firstInit = null;
-
-            (async () => {
-                const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
-                for (const tab of tabs) {
-                    if (tab.status === 'complete') {
-                        chrome.scripting.executeScript({files: ['normalize-text.js', 'content-scripts/content-script.js'], target: {tabId: tab.id}})
-                    }
-                }
-            })();
             return
-        }
-
-        if (jsons) {
-            console.log('Загрузка новых ответов')
-            for (const json of jsons) {
-                self.initStage.stage2.max += json.questions.length + json.topics.length
-                self.initStage.stage3.max += json.questions.length + json.topics.length
-            }
-            sendStage()
-            for (const json of jsons) {
-                await joinDB(json, transaction)
-            }
-            console.log('Загрузка новых ответов окончена')
         }
 
         if (oldVersion <= 12) {
@@ -176,19 +65,20 @@ async function init() {
             await transaction.objectStore('other').put(settings, 'settings')
         }
 
-        dbCheck = await openDB('check', dbVersion)
-        dbCheck.close()
-
-        firstInit = null
+        if (oldVersion <= 14) {
+            await db.deleteObjectStore('questions')
+            await db.deleteObjectStore('topics')
+            const questions = db.createObjectStore('questions', {autoIncrement: true, keyPath: '_id'})
+            questions.createIndex('question', 'question', {unique: true})
+            questions.createIndex('topics', 'topics', {multiEntry: true})
+            const topics = db.createObjectStore('topics', {autoIncrement: true, keyPath: '_id'})
+            topics.createIndex('name', 'name')
+            topics.createIndex('completed', 'completed')
+            topics.createIndex('code', 'code', {unique: true})
+            topics.createIndex('id', 'id', {unique: true})
+        }
 
         console.log('Обновление базы данных завершено')
-    }
-
-    // на случай если не удалось обновить бд (ну и хрен с ним)
-    if (firstInit) {
-        dbCheck = await openDB('check', dbVersion)
-        dbCheck.close()
-        firstInit = null
     }
 
 
@@ -202,11 +92,11 @@ async function init() {
     console.log('started background!')
 }
 
-chrome.runtime.onInstalled.addListener(function(details) {
-    if (details.reason === 'install') {
-        chrome.runtime.openOptionsPage()
-    }
-})
+// chrome.runtime.onInstalled.addListener(function(details) {
+//     if (details.reason === 'install') {
+//         chrome.runtime.openOptionsPage()
+//     }
+// })
 
 self.reimportEducationElements = reimportEducationElements
 async function reimportEducationElements() {
@@ -255,50 +145,20 @@ async function reimportEducationElements() {
             topic.completed = 0
             if (object.id && !topic.id) {
                 topic.id = object.id
-                if (!topic.newChange) topic.newChange = 2
             }
             if (object.code && !topic.code) {
                 topic.code = object.code
-                if (!topic.newChange) topic.newChange = 2
             }
             if (object.name && !topic.name) {
                 topic.name = object.name
-                if (!topic.newChange) topic.newChange = 2
             }
-            // TODO временно
-            delete topic.needSearchAnswers
             console.log('Обновлён', topic)
         } else {
             topic = object
             topic.completed = 0
-            // TODO временно
-            delete topic.needSearchAnswers
-            topic.newChange = 1
             console.log('Добавлен', topic)
         }
         await transaction.put(topic)
-    }
-}
-
-self.resetNewChange = resetNewChange
-async function resetNewChange() {
-    let transaction
-    try {
-        transaction = db.transaction(['questions', 'topics'], 'readwrite')
-        let cursor = await transaction.objectStore('questions').index('newChange').openCursor(IDBKeyRange.lowerBound(1))
-        while (cursor) {
-            const value = cursor.value
-            delete value.newChange
-            await cursor.update(value)
-            // noinspection JSVoidFunctionReturnValueUsed
-            cursor = await cursor.continue()
-            if (!cursor) {
-                cursor = await transaction.objectStore('topics').index('newChange').openCursor(IDBKeyRange.lowerBound(1))
-            }
-        }
-    } catch (error) {
-        transaction.abort()
-        console.error(error)
     }
 }
 
@@ -445,30 +305,27 @@ async function fixDupTopics() {
             }
             const newName = normalizeText(topic.name)
             const found = await transaction.objectStore('topics').index('name').get(newName)
-            if (found && found.key !== topic.key) {
+            if (found && found._id !== topic._id) {
                 console.warn('Найден дублирующий topic, он был удалён и объединён', found)
-                await transaction.objectStore('topics').delete(found.key)
+                await transaction.objectStore('topics').delete(found._id)
                 if (topic.id !== found.id) {
                     topic.id = found.id
-                    if (!topic.newChange) topic.newChange = 2
                 }
                 if (topic.name !== found.name) {
                     topic.name = normalizeText(found.name)
-                    if (!topic.newChange) topic.newChange = 2
                 } else if (topic.name) {
                     topic.name = normalizeText(topic.name)
                 }
                 if (topic.code !== found.number) {
                     topic.code = found.number
-                    if (!topic.newChange) topic.newChange = 2
                 }
                 await cursor.update(topic)
 
-                let cursor2 = await transaction.objectStore('questions').index('topics').openCursor(found.key)
+                let cursor2 = await transaction.objectStore('questions').index('topics').openCursor(found._id)
                 while (cursor2) {
                     const question = cursor2.value
-                    question.topics.splice(question.topics.indexOf(found.key), 1)
-                    if (!question.topics.includes(topic.key)) question.topics.push(topic.key)
+                    question.topics.splice(question.topics.indexOf(found._id), 1)
+                    if (!question.topics.includes(topic._id)) question.topics.push(topic._id)
                     await cursor2.update(question)
                     // noinspection JSVoidFunctionReturnValueUsed
                     cursor2 = await cursor2.continue()
@@ -511,7 +368,7 @@ async function getCorrectAnswers(topic, index) {
     if (!result) throw Error('Не найдено по заданному номеру')
     // console.log('Поиск...')
     let text = result.value.name + ':\n\n'
-    let cursor = await db.transaction('questions').store.index('topics').openCursor(result.value.key)
+    let cursor = await db.transaction('questions').store.index('topics').openCursor(result.value._id)
     while(cursor) {
         const question = cursor.value
         for (const answerHash of Object.keys(question.answers)) {
@@ -534,28 +391,6 @@ async function getCorrectAnswers(topic, index) {
     return text
 }
 
-function sendStage() {
-    let changed
-    for (let x=1; x<=3; x++) {
-        const stage = self.initStage['stage' + x]
-        const percent = ((Math.floor((100 * stage.current / stage.max) * 10) / 10) || 0).toFixed(1)
-        if (stage.percent !== percent) {
-            self.initStage['stage' + x].percent = percent
-            changed = percent
-        }
-    }
-    if (changed === '100.0' || (changed && Date.now() - self.lastSend >= 500)) {
-        console.log(JSON.stringify(self.initStage).replaceAll('},"', '},\n"'))
-        self.lastSend = Date.now();
-        (async () => {
-            try {
-                await chrome.runtime.sendMessage({initStage: self.initStage})
-            } catch (ignored) {}
-        })()
-    }
-}
-self.sendStage = sendStage
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.authData) {
         (async () => {
@@ -567,15 +402,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })()
     }
     if (message.status) {
-        if (firstInit !== null) {
-            sendResponse({running: false, initializing: true})
-        } else {
-            (async () => {
-                await initializeFunc
-                sendResponse({running: runningTab === sender.tab.id, collectAnswers, settings})
-            })()
-            return true
-        }
+        (async () => {
+            await initializeFunc
+            sendResponse({running: runningTab === sender.tab.id, collectAnswers, settings})
+        })()
+        return true
     } else if (message.reloadPage) {
         if (message.error) {
             (async () => {
@@ -606,10 +437,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.action.onClicked.addListener(async (tab) => {
     chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
     chrome.action.setBadgeText({text: ''})
-    if (firstInit !== null) {
-        chrome.runtime.openOptionsPage()
-        return
-    }
     await initializeFunc
     if (settings.mode === 'manual' || settings.mode === 'disabled') {
         chrome.runtime.openOptionsPage()
@@ -847,21 +674,18 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         const newTopic = await db.getFromIndex('topics', 'name', foundEE.name)
         if (newTopic) {
             console.warn('Найден дублирующий topic, для исправления он был удалён', JSON.stringify(educationalElement))
-            await db.delete('topics', educationalElement.key)
-            educationalElement.key = newTopic.key
+            await db.delete('topics', educationalElement._id)
+            educationalElement._id = newTopic._id
         }
     }
     if (educationalElement.id !== foundEE.id) {
         educationalElement.id = foundEE.id
-        if (!educationalElement.newChange) educationalElement.newChange = 2
     }
     if (educationalElement.name !== foundEE.name) {
         educationalElement.name = foundEE.name
-        if (!educationalElement.newChange) educationalElement.newChange = 2
     }
     if (educationalElement.code !== foundEE.number) {
         educationalElement.code = foundEE.number
-        if (!educationalElement.newChange) educationalElement.newChange = 2
     }
     // educationalElement.completed = completed
     // educationalElement.status = status
@@ -972,27 +796,38 @@ chrome.runtime.onConnect.addListener((port) => {
         await initializeFunc
         setReloadTabTimer()
         if (message.question) {
+            let searchedOnServer
             let topicKey
             const topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
             if (topic) {
-                topicKey = topic.key
-                if (topic.needSearchAnswers) {
-                    // TODO временно
-                    // await searchOnSites(message.question.topics[0], topic.key)
-                    delete topic.needSearchAnswers
-                    await db.put('topics', topic)
-                }
+                topicKey = topic._id
             } else {
-                topicKey = await db.put('topics', {name: message.question.topics[0], newChange: 1})
-                console.log('Внесена новая тема в базу', message.question.topics[0])
-                // TODO временно
-                // await searchOnSites(message.question.topics[0], topicKey)
+                searchedOnServer = true
+                const result = await getAnswersByTopicFromServer(message.question.topics[0])
+                if (!result) {
+                    topicKey = await db.put('topics', {name: message.question.topics[0]})
+                    console.log('Внесена новая тема в базу', message.question.topics[0])
+                }
             }
-            const key = await db.getKeyFromIndex('questions', 'question', message.question.question)
+            let key = await db.getKeyFromIndex('questions', 'question', message.question.question)
+            if (!key) {
+                searchedOnServer = true
+                const result = await getAnswersByQuestionFromServer(message.question.question)
+                if (result) {
+                    key = result.key
+                }
+            }
             // работа с найденным вопросом
             if (key) {
-                const question = await db.get('questions', key)
+                let question = await db.get('questions', key)
                 const answerHash = objectHash(message.question.answers.answers)
+                if (!searchedOnServer && !question.answers[answerHash]) {
+                    const result = await getAnswersByQuestionFromServer(message.question.question)
+                    if (result) {
+                        key = result.key
+                        question = result
+                    }
+                }
                 // добавление другого варианта ответов (в одном вопросе может быть несколько вариаций ответов с разными ответами)
                 if (!question.answers[answerHash]) {
                     question.answers[answerHash] = message.question.answers
@@ -1026,12 +861,6 @@ chrome.runtime.onConnect.addListener((port) => {
                         // предлагаем рандомный предполагаемый вариант правильного ответа
                         const combination = question.answers[answerHash].combinations[Math.floor(Math.random()*question.answers[answerHash].combinations.length)]
                         answers = combination.map(index => question.answers[answerHash].answers[index])
-                        // if (!question.answers[answerHash].tryedAI) {
-                        //     await searchOnAI(question, answerHash)
-                        //     if (question.correctAnswers[answerHash]) {
-                        //         answers = question.correctAnswers[answerHash]
-                        //     }
-                        // }
                         console.log('добавлены новые варианты ответов', question)
                     }
                     question.answers[answerHash].lastUsedAnswers = answers
@@ -1042,6 +871,13 @@ chrome.runtime.onConnect.addListener((port) => {
                     question.lastOrder[message.question.lastOrder] = answerHash
                     if (!question.answers[answerHash].type && message.question.answers.type) {
                         question.answers[answerHash].type = message.question.answers.type
+                    }
+                    if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
+                        const result = await getAnswersByQuestionFromServer(message.question.question)
+                        if (result) {
+                            key = result.key
+                            question = result
+                        }
                     }
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
@@ -1089,12 +925,6 @@ chrome.runtime.onConnect.addListener((port) => {
                                 console.log('предложен другой вариант ответа (заново сгенерированы комбинации)', question)
                             }
                         }
-                        // if (!question.answers[answerHash].tryedAI) {
-                        //     await searchOnAI(question, answerHash)
-                        //     if (question.correctAnswers[answerHash]) {
-                        //         answers = question.correctAnswers[answerHash]
-                        //     }
-                        // }
                         question.answers[answerHash].lastUsedAnswers = answers
                         port.postMessage({answers, question, answerHash})
                     }
@@ -1102,7 +932,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (!question.topics.includes(topicKey)) {
                     question.topics.push(topicKey)
                 }
-                await db.put('questions', question, key)
+                await db.put('questions', question)
             // добавление вопроса с его вариантами ответов
             } else {
                 const question = message.question
@@ -1115,12 +945,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.lastOrder = {[question.lastOrder]: answerHash}
                 question.correctAnswers = {}
                 question.topics = [topicKey]
-                question.newChange = 1
                 console.log('добавлен новый вопрос', question)
-                // await searchOnAI(question, answerHash)
-                // if (question.correctAnswers[answerHash]) {
-                //     answers = question.correctAnswers[answerHash]
-                // }
                 question.answers[answerHash].lastUsedAnswers = answers
                 port.postMessage({answers, question, answerHash})
                 await db.put('questions', question)
@@ -1131,11 +956,19 @@ chrome.runtime.onConnect.addListener((port) => {
             for (const resultQuestion of message.results) {
                 let topicKey = await db.getKeyFromIndex('topics', 'name', resultQuestion.topics[0])
                 if (!topicKey) {
-                    topicKey = await db.put('topics', {name: resultQuestion.topics[0], newChange: 1})
-                    console.log('Внесена новая тема в базу', resultQuestion.topics[0])
-                    // await searchOnSites(resultQuestion.topics[0], topicKey)
+                    const result = await getAnswersByTopicFromServer(message.question.topics[0])
+                    if (!result) {
+                        topicKey = await db.put('topics', {name: resultQuestion.topics[0]})
+                        console.log('Внесена новая тема в базу', resultQuestion.topics[0])
+                    }
                 }
                 let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
+                if (!key) {
+                    const result = await getAnswersByQuestionFromServer(resultQuestion.question)
+                    if (result) {
+                        key = result.key
+                    }
+                }
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
                 if (!key) {
                     if (resultQuestion.correct) {
@@ -1143,8 +976,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             question: resultQuestion.question,
                             answers: {},
                             topics: [topicKey],
-                            correctAnswers: {'unknown': resultQuestion.answers.answers},
-                            newChange: 2
+                            correctAnswers: {'unknown': resultQuestion.answers.answers}
                         }
                         key = await db.put('questions', correctQuestion)
                         console.log('записан новый ответ с новым вопросом', correctQuestion)
@@ -1253,7 +1085,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             } else {
                                 // TODO иногда какого-то хрена правильные ответы выдаются как неверные, мы пробуем костылём во второй раз ответить
                                 //  но если и во второй раз не прокатит то удаляем правилные ответы и пробуем методом подбора подобрать правильные ответы
-                                if (!question.answers[foundAnswerHash].fakeCorrectAnswers && !question.answers[foundAnswerHash].tryedAI) {
+                                if (!question.answers[foundAnswerHash].fakeCorrectAnswers) {
                                     console.warn('Пока какой-то причине НМО посчитал правильные ответы НЕ правильными, возможно это сбой какой-то', question, resultQuestion)
                                     changedCombinations = true
                                     fakeCorrectAnswers = true
@@ -1336,9 +1168,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
 
                     if (changedAnswers || changedCombinations || changedOther) {
-                        if (changedCombinations && !question.newChange) question.newChange = 1
-                        if (changedAnswers) question.newChange = 2
-                        await db.put('questions', question, key)
+                        await db.put('questions', question)
                         if (changedAnswers) {
                             console.log('записан или изменён новый ответ', resultQuestion, question)
                         } else {
@@ -1431,272 +1261,77 @@ function getCombinations(items, multi) {
     return combinations
 }
 
-self.searchOnAI = searchOnAI
-async function searchOnAI(question, answerHash) {
+async function getAnswersByQuestionFromServer(question) {
     try {
-        console.log('Спрашивает ответ у ИИ')
-        // TODO временно
-        if (!answerHash) answerHash = Object.keys(question.answers)
-        let type = question.answers[answerHash].type
-        if (!type) type = 'Выберите ОДИН правильный ответ'
-        let content = 'Вопрос: ' + question.question + '\n\n' + type + ':\n- ' + question.answers[answerHash].answers.join('\n- ')
-        let response = await fetch(' https://api.groq.com/openai/v1/chat/completions', {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer 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'
-            },
-            body: JSON.stringify({
-                model: 'llama-3.1-70b-versatile',
-                messages: [
-                    {role: 'system', content: 'Ты должен отвечать только из предложенных вариантов ответов с новой строки без лишних слов'},
-                    {role: 'user', content},
-                ]
-            }),
-            method: 'POST',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
-        })
-        let json = await response.json()
-        console.log('Ответ от ИИ получен\n', json.choices[0].message.content)
-
-        const correctAnswers = json.choices[0].message.content.split('\n').map(item => item.replace(/- /, '').trim())
-        for (const answer of correctAnswers) {
-            if (!question.answers[answerHash].answers.includes(answer)) {
-                console.warn('Ответы которые дал ИИ не соответствует предложенным вариантам ответов')
-                return
-            }
+        const response = await fetch('https://serega007.ru/getQuestionByName', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: question})})
+        const json = await response.json()
+        if (json) {
+            return await joinQuestion(question)
         }
-
-        question.answers[answerHash].tryedAI = true
-        question.correctAnswers[answerHash] = correctAnswers
     } catch (error) {
-        console.error('Ошибка с ИИ', error)
+        console.error(error)
     }
 }
 
-self.searchOnSites = searchOnSites
-async function searchOnSites(topic, topicKey) {
-    if (!topicKey) {
-        topicKey = await db.getKeyFromIndex('topics', 'name', topic)
-    }
-    chrome.action.setTitle({title: 'Выполняется поиск ответов в интернете'})
-    chrome.action.setBadgeText({text: 'SEARCH'})
+async function getAnswersByTopicFromServer(topic) {
     try {
-        await searchOn24forcare(topic, topicKey)
-        if (stopRunning) return
-        await searchOnReshnmo(topic, topicKey)
-        // if (stopRunning) return
-    } finally {
-        if (!stopRunning) {
-            chrome.action.setTitle({title: 'Расширение решает тест'})
-            chrome.action.setBadgeText({text: 'ON'})
-        }
-    }
-}
-
-self.searchOn24forcare = searchOn24forcare
-async function searchOn24forcare(topic, topicKey) {
-    try {
-        chrome.action.setTitle({title: 'Выполняется поиск ответов на сайте 24forcare'})
-        console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + '...')
-        // c " на сайте плохо ищется
-        topic = topic.replaceAll(/["«»]/gi, '')
-        let response = await fetch('https://24forcare.com/search/?query=' + topic, {signal: controller.signal})
-        let text = await response.text()
-        let doc = new JSDOM(text).window.document
-        let shot = true
-        if (!doc.querySelector('.item-name') && topic.match(/\s?-?\s?\d{4}$/gi)) {
-            shot = false
-            topic = topic.replaceAll(/\s?-?\s?\d{4}$/gi, '')
-            response = await fetch('https://24forcare.com/search/?query=' + topic, {signal: controller.signal})
-            text = await response.text()
-            doc = new JSDOM(text).window.document
-        }
-        if (!doc.querySelector('.item-name') && topic.includes('клиническим рекомендациям') && topic.lastIndexOf('(') !== -1) {
-            shot = false
-            topic = topic.slice(0, topic.lastIndexOf('(')).trim()
-            response = await fetch('https://24forcare.com/search/?query=' + topic, {signal: controller.signal})
-            text = await response.text()
-            doc = new JSDOM(text).window.document
-        }
-        if (!doc.querySelector('.item-name')) {
-            shot = true
-            response = await fetch('https://24forcare.com/search/?query=' + topic.substring(0, topic.length / 2), {signal: controller.signal})
-            text = await response.text()
-            doc = new JSDOM(text).window.document
-        }
-        if (!doc.querySelector('.item-name')) {
-            console.warn('На сайте 24forcare.com не удалось найти ответы по теме ' + topic)
-            return
-        }
-        const searchTopics = doc.querySelector('.shot') && shot ? doc.querySelectorAll('.shot') : doc.querySelectorAll('.item-name')
-        for (const found of searchTopics) {
-            let topicText = normalizeText(found.textContent)
-            if (topicText.startsWith('тест с ответами по теме «')) {
-                topicText = topicText.replaceAll('тест с ответами по теме «', '')
-                topicText = topicText.slice(0, -1)
+        const response = await fetch('https://serega007.ru/getQuestionsByTopic', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: topic})})
+        const json = await response.json()
+        if (json) {
+            await db.put('topics', json.topic)
+            console.log('Внесена новая тема в базу', json.topic)
+            for (const question of json.questions) {
+                await joinQuestion(question)
             }
-            let newTopic = await db.getFromIndex('topics', 'name', topicText)
-            if (newTopic) {
-                if (newTopic.needSearchAnswers) {
-                    delete newTopic.needSearchAnswers
-                    await db.put('topics', newTopic)
-                } else {
-                    continue
-                }
-            }
-
-            const response2 = await fetch(found.href, {signal: controller.signal})
-            const text2 = await response2.text()
-            const doc2 = new JSDOM(text2).window.document
-            topicText = normalizeText(doc2.querySelector('h1').textContent)
-            if (topicText.startsWith('тест с ответами по теме «')) {
-                topicText = topicText.replaceAll('тест с ответами по теме «', '')
-                topicText = topicText.slice(0, -1)
-            }
-            console.log('Найдено ' + topicText)
-            newTopic = await db.getFromIndex('topics', 'name', topicText)
-            if (!newTopic) {
-                topicKey = await db.put('topics', {name: topicText, newChange: 1})
-                console.log('Внесена новая тема в базу', topicText)
-            }
-            for (const el of doc2.querySelectorAll('.row h3')) {
-                // noinspection JSDeprecatedSymbols
-                if (el.querySelector('tt') || el.querySelector('em')) continue // обрезаем всякую рекламу
-                const questionText = normalizeText(el.textContent.trim().replace(/^\d+\.\s*/, ''))
-                const answers = []
-                const correctAnswers = []
-                for (const answer of el.nextElementSibling.childNodes) {
-                    if (!answer.textContent.trim()) continue
-                    // noinspection RegExpRedundantEscape
-                    const text = normalizeText(answer.textContent).replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, '')
-                    if (answer.tagName === 'STRONG') {
-                        correctAnswers.push(text)
-                    }
-                    answers.push(text)
-                }
-                if (!answers.length || !correctAnswers.length) continue
-                answers.sort()
-                correctAnswers.sort()
-                await joinAnswers(topicKey, questionText, answers, correctAnswers)
-            }
+            return true
         }
-        console.log('Поиск ответов на сайте 24forcare.com по теме ' + topic + ' окончен')
     } catch (error) {
-        console.error('Ошибка поиска ответов на сайте 24forcare.com', error)
+        console.error(error)
     }
 }
 
-async function searchOnReshnmo(topic, topicKey) {
-    try {
-        chrome.action.setTitle({title: 'Выполняется поиск ответов на сайте reshnmo.ru'})
-        console.log('Поиск ответов на сайте reshnmo.ru по теме ' + topic + '...')
-        let response = await fetch('https://reshnmo.ru/?s=' + topic)
-        let text = await response.text()
-        let doc = new JSDOM(text).window.document
-        // удаляем всякую рекламу
-        doc.querySelector('#secondary')?.remove()
-        doc.querySelector('#related-posts')?.remove()
-        if (!doc.querySelector('.post-cards .post-card__title')) {
-            console.warn('На сайте reshnmo.ru не удалось найти ответы по теме ' + topic)
-            return
-        }
-        for (const found of doc.querySelectorAll('.post-cards .post-card__title')) {
-            let topicText = normalizeText(found.textContent)
-            topicText = topicText.replaceAll('тест с ответами по теме «', '').replaceAll('» | тесты нмо с ответами', '')
-            let newTopic = await db.getFromIndex('topics', 'name', topicText)
-            if (newTopic) {
-                if (newTopic.needSearchAnswers) {
-                    delete newTopic.needSearchAnswers
-                    await db.put('topics', newTopic)
-                } else {
-                    continue
-                }
-            }
+async function joinQuestion(newQuestion) {
+    const question = await db.getFromIndex('questions', 'question', newQuestion.question)
+    if (!question) {
+        console.log('С интернета добавлен новый вопрос', newQuestion)
+        await db.put('questions', newQuestion)
+        return newQuestion
+    }
 
-            const response2 = await fetch(found.querySelector('.post-card__title a').href)
-            const text2 = await response2.text()
-            const doc2 = new JSDOM(text2).window.document
-            topicText = normalizeText(doc2.querySelector('.entry-title').textContent)
-            topicText = topicText.replaceAll('тест с ответами по теме «', '').replaceAll('» | тесты нмо с ответами', '')
-            console.log('Найдено ' + topicText)
-            newTopic = await db.getFromIndex('topics', 'name', topicText)
-            if (!newTopic) {
-                topicKey = await db.put('topics', {name: topicText, newChange: 1})
-                console.log('Внесена новая тема в базу', topicText)
-            }
-            for (const el of doc2.querySelectorAll('.entry-content h3')) {
-                // обрезаем всякую рекламу
-                if (el.id === 'spetsialnosti-dlya-predvaritelnogo-i-itogovogo') continue
-                const questionText = normalizeText(el.textContent.trim().replace(/^\d+\.\s*/, ''))
-                const answers = []
-                const correctAnswers = []
-                for (const answer of el.nextElementSibling.childNodes) {
-                    if (!answer.textContent.trim()) continue
-                    // noinspection RegExpRedundantEscape
-                    const text = normalizeText(answer.textContent.trim().replaceAll(/^"/g, '').replaceAll(/^\d+\) /g, '').replaceAll(/[\.\;\+"]+$/g, ''))
-                    if (answer.tagName === 'STRONG') {
-                        correctAnswers.push(text)
-                    }
-                    answers.push(text)
-                }
-                if (!answers.length || !correctAnswers.length) continue
-                answers.sort()
-                correctAnswers.sort()
-                await joinAnswers(topicKey, questionText, answers, correctAnswers)
-            }
+    let changed, changedAnswers
+    for (const answersHash of Object.keys(newQuestion.answers)) {
+        if (!question.answers[answersHash] || (!question.answers[answersHash].type && newQuestion.answers[answersHash].type)) {
+            changed = true
+            question.answers[answersHash] = newQuestion.answers[answersHash]
         }
-        console.log('Поиск ответов на сайте reshnmo.ru по теме ' + topic + ' окончен')
-    } catch (error) {
-        console.error('Ошибка поиска ответов на сайте reshnmo.ru', error)
+        if (!question.correctAnswers[answersHash] && newQuestion.correctAnswers[answersHash]) {
+            changedAnswers = true
+            question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
+        }
     }
-}
 
-async function joinAnswers(topicKey, questionText, answers, correctAnswers) {
-    const key = await db.getKeyFromIndex('questions', 'question', questionText)
-    let question = {
-        question: questionText,
-        answers: {},
-        correctAnswers: {},
-        topics: [topicKey],
-        newChange: 2
-    }
-    if (key) {
-        question = await db.get('questions', key)
-    }
-    const answersHash = objectHash(answers)
-    let changed = {}
-    if (!question.answers[answersHash]) {
-        changed.answers = true
-        question.answers[answersHash] = {answers}
-    } else if (question.answers[answersHash].combinations) {
-        changed.combinations = true
-        delete question.answers[answersHash].combinations
-    }
-    if (!question.correctAnswers[answersHash]) {
-        changed.correctAnswers = true
-        question.correctAnswers[answersHash] = correctAnswers
-    }
-    if (question.correctAnswers['unknown']) {
-        for (const answer of correctAnswers) {
-            const index = question.correctAnswers['unknown'].indexOf(answer)
-            if (index !== -1) {
-                changed.correctAnswers = true
-                question.correctAnswers['unknown'].splice(index, 1)
+    if (newQuestion.answers['unknown']) {
+        if (question.answers['unknown'] == null) question.answers['unknown'] = []
+        for (const answer of newQuestion.answers['unknown']) {
+            if (!question.answers['unknown'].includes(answer)) {
+                changed = true
+                question.answers['unknown'].push(answer)
             }
         }
     }
-    if (question.correctAnswers['unknown']?.length === 0) {
-        changed.correctAnswers = true
-        delete question.correctAnswers['unknown']
+    if (newQuestion.correctAnswers['unknown']) {
+        if (question.correctAnswers['unknown'] == null) question.correctAnswers['unknown'] = []
+        for (const answer of newQuestion.correctAnswers['unknown']) {
+            if (!question.correctAnswers['unknown'].includes(answer)) {
+                changedAnswers = true
+                question.correctAnswers['unknown'].push(answer)
+            }
+        }
     }
-    if (!question.topics.includes(topicKey)) {
-        changed.topics = true
-        question.topics.push(topicKey)
-    }
-    if (Object.values(changed)) {
-        question.newChange = 2
-        console.log('С интернета добавлены или изменены ответы в бд', question, JSON.stringify(changed))
-        // await db.put('questions', question, key)
+    if (changed || changedAnswers) {
+        await db.put('questions', question)
+        console.log('С интернета обновлён вопрос', question)
+        return question
     }
 }
 
