@@ -814,7 +814,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 searchedOnServer = true
                 const result = await getAnswersByQuestionFromServer(message.question.question)
                 if (result) {
-                    key = result.key
+                    key = result._id
                 }
             }
             // работа с найденным вопросом
@@ -824,7 +824,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (!searchedOnServer && !question.answers[answerHash]) {
                     const result = await getAnswersByQuestionFromServer(message.question.question)
                     if (result) {
-                        key = result.key
+                        key = result._id
                         question = result
                     }
                 }
@@ -875,7 +875,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
                         const result = await getAnswersByQuestionFromServer(message.question.question)
                         if (result) {
-                            key = result.key
+                            key = result._id
                             question = result
                         }
                     }
@@ -966,7 +966,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (!key) {
                     const result = await getAnswersByQuestionFromServer(resultQuestion.question)
                     if (result) {
-                        key = result.key
+                        key = result._id
                     }
                 }
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
@@ -1266,7 +1266,7 @@ async function getAnswersByQuestionFromServer(question) {
         const response = await fetch('https://serega007.ru/getQuestionByName', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: question})})
         const json = await response.json()
         if (json) {
-            return await joinQuestion(json)
+            return joinQuestion(json)
         }
     } catch (error) {
         console.error(error)
