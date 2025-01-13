@@ -1266,7 +1266,7 @@ async function getAnswersByQuestionFromServer(question) {
         const response = await fetch('https://serega007.ru/getQuestionByName', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: question})})
         const json = await response.json()
         if (json) {
-            return await joinQuestion(question)
+            return await joinQuestion(json)
         }
     } catch (error) {
         console.error(error)
