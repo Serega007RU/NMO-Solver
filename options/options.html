@@ -15,7 +15,7 @@
 </div>
 <div class="main" style="display: none">
     <header>
-        <h1 class="nav-head">Режимы работы</h1>
+        <h1 class="nav-head">Режим работы</h1>
         <nav>
             <button data-block="disabled">Отключено</button>
             <button data-block="manual" class="active">Ручной</button>
@@ -74,8 +74,11 @@
                 <div class="label">Решать тесты на 5-ку (методом подбора)</div>
             </div>
         </div>
-        <div class="block" data-block="auto">
-            <div class="description">В разработке...</div>
+        <div class="block" data-block="auto" spellcheck="false">
+            <div>Список тем необходимые для прохождения</div>
+            <ul class="topics"  contenteditable="true">
+                <li></li>
+            </ul>
         </div>
     </main>
 </div>

@@ -3,7 +3,7 @@ self.idb = idb
 
 let db, settings, resolveInit
 async function init() {
-    db = await idb.openDB('nmo', 15)
+    db = await idb.openDB('nmo', 16)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -19,24 +19,16 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     //Загрузка переключателей
     const nav_btns = document.querySelectorAll('nav button')
     const blocks = document.querySelectorAll('div.block')
-    let timer
     nav_btns.forEach((el)=> {
         el.addEventListener('click', () => {
             const mode = el.getAttribute('data-block')
-            if (mode === 'auto') {
-                el.textContent = 'В разработке'
-                clearTimeout(timer)
-                timer = setTimeout(() => {
-                    el.textContent = 'Автоматический'
-                }, 3000)
-                return
-            }
 
             blocks.forEach((block) => {
-                block.classList.remove('active')
                 const dataBlock = block.getAttribute('data-block')
-                if (dataBlock === el.getAttribute('data-block')) {
+                if (dataBlock === el.getAttribute('data-block') || (dataBlock === 'semi-auto' && 'auto' === el.getAttribute('data-block'))) {
                     block.classList.add('active')
+                } else {
+                    block.classList.remove('active')
                 }
             })
 
@@ -120,6 +112,94 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             onChangedSettings()
         }
     })
+
+    // это просто один большой сплошной костыль заставляющий подобие нашего textarea работать с текстом без форматирования
+    document.querySelector('.topics').addEventListener('paste', (event) => {
+        const text = event.clipboardData.getData('text/plain').replaceAll('\t', ' ')
+        event.preventDefault()
+        document.execCommand('insertText', false, text)
+    })
+    const elTopics = document.querySelector('.topics')
+    let oldValueTopics = elTopics.innerText
+    let savedCursor
+    elTopics.addEventListener('input', () => {
+        if (oldValueTopics === elTopics.innerText) {
+            if (savedCursor) {
+                setCursorIndex(elTopics, savedCursor)
+                savedCursor = null
+            }
+            return
+        }
+        elTopics.removeAttribute('style')
+        let maxWidth = 0
+        for (const [index, li] of Array.from(elTopics.children).entries()) {
+            li.removeAttribute('style')
+            // li.removeAttribute('data-before')
+            li.removeAttribute('data-tooltip')
+            if (li.firstElementChild?.tagName === 'BR') {
+                li.firstElementChild.remove()
+            }
+            if (li.firstElementChild) {
+                if (!savedCursor) savedCursor = getCursorIndex(elTopics)
+                const source = li
+                const destination = source.parentElement
+                const referenceElement = source.previousElementSibling
+                const fragment = document.createDocumentFragment()
+                for (const text of li.innerText.split('\n')) {
+                    const li2 = document.createElement('li')
+                    li2.textContent = text
+                    fragment.append(li2)
+                }
+                if (referenceElement) {
+                    destination.insertBefore(fragment, referenceElement.nextSibling)
+                } else {
+                    if (index === 0) {
+                        destination.prepend(fragment)
+                    } else {
+                        destination.append(fragment)
+                    }
+                }
+                source.remove()
+                elTopics.dispatchEvent(new Event('input', { bubbles: true }))
+                return
+            }
+            if (li.innerHTML.replaceAll('&nbsp;', ' ').replaceAll('\r', '') !== li.innerText) {
+                if (!savedCursor) savedCursor = getCursorIndex(elTopics)
+                li.innerHTML = li.innerText
+            }
+            maxWidth = Math.max(li.clientWidth, maxWidth)
+        }
+
+        elTopics.style.setProperty('--width', maxWidth + 'px')
+
+        if (savedCursor) {
+            setCursorIndex(elTopics, savedCursor)
+            savedCursor = null
+        }
+
+        updateTopics(elTopics)
+
+        oldValueTopics = elTopics.innerText
+    })
+    elTopics.addEventListener('beforeinput', (event) => {
+        if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+            event.preventDefault()
+        }
+    })
+
+    elTopics.addEventListener('click', async (event) => {
+        console.log(event.target, event.offsetX)
+        if (event.offsetX > 30) return
+        const topic = await db.get('topics', event.target.id)
+        if (!topic) return
+        if (topic.completed) {
+            topic.completed = 0
+            delete topic.error
+            event.target.setAttribute('data-before', '')
+            event.target.removeAttribute('data-tooltip')
+            await db.put('topics', topic)
+        }
+    })
 })
 
 async function restoreOptions() {
@@ -128,8 +208,10 @@ async function restoreOptions() {
     blocks.forEach((block) => {
         block.classList.remove('active')
         const dataBlock = block.getAttribute('data-block')
-        if (dataBlock === settings.mode) {
+        if (dataBlock === settings.mode || (dataBlock === 'semi-auto' && 'auto' === settings.mode)) {
             block.classList.add('active')
+        } else {
+            block.classList.remove('active')
         }
     })
     nav_btns.forEach((btn)=> {
@@ -153,6 +235,53 @@ async function restoreOptions() {
     document.querySelector('#TimeoutReloadTabMin').max = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').value = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').min = settings.timeoutReloadTabMin / 1000
+
+    await restoreTopics()
+}
+
+function getCursorIndex(element) {
+    const selection = window.getSelection()
+    if (selection.rangeCount === 0) return 0
+
+    const range = selection.getRangeAt(0)
+    const preCursorRange = range.cloneRange()
+    preCursorRange.selectNodeContents(element)
+    preCursorRange.setEnd(range.startContainer, range.startOffset)
+
+    return preCursorRange.toString().length
+}
+
+function setCursorIndex(element, index) {
+    const selection = window.getSelection()
+    const range = document.createRange()
+
+    let charCount = 0
+    let found = false
+
+    function traverseNodes(node) {
+        if (found) return
+
+        if (node.nodeType === Node.TEXT_NODE) {
+            const textLength = node.textContent.length
+            if (charCount + textLength >= index) {
+                range.setStart(node, index - charCount)
+                range.collapse(true)
+                found = true
+            } else {
+                charCount += textLength
+            }
+        } else {
+            for (let child of node.childNodes) {
+                traverseNodes(child)
+            }
+        }
+    }
+
+    traverseNodes(element)
+    if (!found) return // Если не удалось найти позицию
+
+    selection.removeAllRanges()
+    selection.addRange(range)
 }
 
 async function onChangedSettings() {
@@ -163,6 +292,125 @@ async function onChangedSettings() {
         try {
             await chrome.tabs.sendMessage(tab.id, {status: true, settings})
         } catch (ignored) {}
+    }
+}
+
+async function restoreTopics() {
+    const inputIndex = db.transaction('topics').store.index('inputIndex')
+    const fragment = document.createDocumentFragment()
+    // noinspection JSUnresolvedReference
+    for await (const cursor of inputIndex.iterate()) {
+        const topic = cursor.value
+        const li = document.createElement('li')
+        li.innerText = topic.inputName
+        if (topic.completed === 1) {
+            li.setAttribute('data-before', '✅')
+        } else if (topic.completed === 2) {
+            li.setAttribute('data-before', '❌')
+            if (topic.error) li.setAttribute('data-tooltip', topic.error)
+        } else {
+            li.setAttribute('data-before', '')
+        }
+        li.id = topic._id
+        fragment.append(li)
+    }
+    if (!fragment.childElementCount) fragment.append(document.createElement('li'))
+    const elTopics = document.querySelector('.topics')
+    elTopics.replaceChildren()
+    elTopics.append(fragment)
+}
+
+async function updateTopics(elTopics) {
+    const topicsStore = db.transaction('topics', 'readwrite').store
+
+    const dirty = topicsStore.index('dirty')
+    // noinspection JSUnresolvedReference
+    for await (const cursor of dirty.iterate(1)) {
+        await cursor.delete()
+    }
+
+    const completed = topicsStore.index('completed')
+    // noinspection JSUnresolvedReference
+    for await (const cursor of completed.iterate(0)) {
+        const topic = cursor.value
+        delete topic.completed
+        delete topic.inputIndex
+        delete topic.inputName
+        await cursor.update(topic)
+    }
+
+    const inputIndex = topicsStore.index('inputIndex')
+    // noinspection JSUnresolvedReference
+    for await (const cursor of inputIndex.iterate(IDBKeyRange.lowerBound(0))) {
+        const topic = cursor.value
+        if (topic.completed === 0) delete topic.completed
+        delete topic.inputIndex
+        delete topic.inputName
+        await cursor.update(topic)
+    }
+
+    for (const [index, li] of Array.from(elTopics.children).entries()) {
+        const text = li.innerText.trim()
+        if (!text) {
+            li.setAttribute('data-before', '')
+            continue
+        }
+
+        const ee = text.split(/\t/)
+        const object = {}
+        if (ee.length === 1 && ee[0].trim()) {
+            if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(ee[0])) {
+                object.id = ee[0]
+            } else {
+                object.name = normalizeText(ee[0])
+            }
+        } else if (ee[0]?.trim() && ee[1]?.trim()) {
+            object.code = ee[0].trim()
+            object.name = normalizeText(ee[1])
+        }
+
+        let topic
+        if (object.id) {
+            topic = await topicsStore.index('id').get(object.id)
+        }
+        if (!topic && object.code) {
+            topic = await topicsStore.index('code').get(object.code)
+        }
+        if (!topic && object.name) {
+            topic = await topicsStore.index('name').get(object.name)
+        }
+        if (topic) {
+            topic.inputIndex = index
+            topic.inputName = text
+            if (object.id && !topic.id) {
+                topic.id = object.id
+            }
+            if (object.code && !topic.code) {
+                topic.code = object.code
+            }
+            if (object.name && !topic.name) {
+                topic.name = object.name
+            }
+            if (topic.completed === 1) {
+                li.setAttribute('data-before', '✅')
+            } else if (topic.completed === 2) {
+                li.setAttribute('data-before', '❌')
+                if (topic.error) li.setAttribute('data-tooltip', topic.error)
+            } else {
+                li.setAttribute('data-before', '')
+            }
+            console.log('Обновлён', topic)
+        } else {
+            topic = object
+            topic.completed = 0
+            topic.inputIndex = index
+            topic.inputName = text
+            topic.dirty = 1
+            li.setAttribute('data-before', '')
+            console.log('Добавлен', topic)
+        }
+        const key = await topicsStore.put(topic)
+        li.id = key
     }
 }
 

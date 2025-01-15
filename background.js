@@ -17,7 +17,7 @@ let startFunc
 let settings
 // let tempCabinet
 
-const dbVersion = 15
+const dbVersion = 16
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -37,6 +37,10 @@ async function init() {
             topics.createIndex('name', 'name')
             // 0 - не выполнено, 1 - выполнено, 2 - есть ошибки
             topics.createIndex('completed', 'completed')
+            // 1 - эта тема внесена вручную пользователем
+            topics.createIndex('dirty', 'dirty')
+            topics.createIndex('inputIndex', 'inputIndex')
+            topics.createIndex('completed, inputIndex', ['completed', 'inputIndex'])
             topics.createIndex('code', 'code', {unique: true})
             topics.createIndex('id', 'id', {unique: true})
             const other = db.createObjectStore('other')
@@ -78,6 +82,12 @@ async function init() {
             topics.createIndex('id', 'id', {unique: true})
         }
 
+        if (oldVersion <= 15) {
+            transaction.objectStore('topics').createIndex('dirty', 'dirty')
+            transaction.objectStore('topics').createIndex('inputIndex', 'inputIndex')
+            transaction.objectStore('topics').createIndex('completed, inputIndex', ['completed', 'inputIndex'])
+        }
+
         console.log('Обновление базы данных завершено')
     }
 
@@ -97,70 +107,6 @@ async function init() {
 //         chrome.runtime.openOptionsPage()
 //     }
 // })
-
-self.reimportEducationElements = reimportEducationElements
-async function reimportEducationElements() {
-    const response = await fetch(chrome.runtime.getURL('data/educational-elements.txt'))
-    const text = await response.text()
-
-    const transaction = db.transaction('topics', 'readwrite').objectStore('topics')
-    let cursor = await transaction.index('completed').openCursor(0)
-    while (cursor) {
-        delete cursor.value.completed
-        await cursor.update(cursor.value)
-        // noinspection JSVoidFunctionReturnValueUsed
-        cursor = await cursor.continue()
-    }
-
-    for (const educationalElement of text.split(/\r?\n/)) {
-        if (!educationalElement) continue
-        // let ee = educationalElement.split(':')
-        // if (ee.length === 1 || !ee[1]?.trim()) {
-        //     ee = educationalElement.split(/\t/)
-        // }
-        let ee = educationalElement.split(/\t/)
-        const object = {}
-        if (ee.length === 1 && ee[0].trim()) {
-            if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(ee[0])) {
-                object.id = ee[0]
-            } else {
-                object.name = normalizeText(ee[0])
-            }
-        } else if (ee[0]?.trim() && ee[1]?.trim()) {
-            object.code = ee[0].trim()
-            object.name = normalizeText(ee[1])
-        }
-
-        let topic
-        if (object.id) {
-            topic = await transaction.index('id').get(object.id)
-        }
-        if (!topic && object.code) {
-            topic = await transaction.index('code').get(object.code)
-        }
-        if (!topic && object.name) {
-            topic = await transaction.index('name').get(object.name)
-        }
-        if (topic) {
-            topic.completed = 0
-            if (object.id && !topic.id) {
-                topic.id = object.id
-            }
-            if (object.code && !topic.code) {
-                topic.code = object.code
-            }
-            if (object.name && !topic.name) {
-                topic.name = object.name
-            }
-            console.log('Обновлён', topic)
-        } else {
-            topic = object
-            topic.completed = 0
-            console.log('Добавлен', topic)
-        }
-        await transaction.put(topic)
-    }
-}
 
 self.fixDupQuestions = fixDupQuestions
 async function fixDupQuestions() {
@@ -518,7 +464,8 @@ async function start(tabId, hasTest, done, hasError) {
 }
 
 async function checkOrGetTopic() {
-    const countEE = await db.countFromIndex('topics', 'completed', 0)
+    if (settings.mode !== 'auto') return 'null'
+    const countEE = await db.countFromIndex('topics', 'completed, inputIndex', IDBKeyRange.bound([0, 0], [0, Infinity]))
     if (countEE) {
         chrome.action.setTitle({title: 'Выполняется поиск темы'})
         chrome.action.setBadgeText({text: 'SEARCH'})
@@ -534,7 +481,7 @@ async function checkOrGetTopic() {
                 showNotification('Ошибка', 'Слишком много попыток поиска темы')
                 return 'error'
             }
-            const educationalElement = await db.getFromIndex('topics', 'completed', 0)
+            const educationalElement = await db.getFromIndex('topics', 'completed, inputIndex', IDBKeyRange.bound([0, 0], [0, Infinity]))
             if (!educationalElement) return 'null'
             try {
                 url = await searchEducationalElement(educationalElement)
@@ -544,9 +491,7 @@ async function checkOrGetTopic() {
                 console.warn(error)
                 if (error.message.startsWith('Topic error, ')) {
                     if (error.message === 'Topic error, Уже пройдено') {
-                        // TODO временно
-                        // educationalElement.completed = 1
-                        delete educationalElement.completed
+                        educationalElement.completed = 1
                         await db.put('topics', educationalElement)
                         continue
                     }
@@ -622,9 +567,9 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         let json = await response.json()
         await checkErrors(json, updatedToken)
         if (!json?.elements?.length) {
-            if (cut) {
+            if (cut || !educationalElement.code) {
                 console.log(json)
-                throw Error('По названию ' + educationalElement.name + ' ничего не найдено')
+                throw Error('Topic error, По заданному названию ничего не найдено')
             } else {
                 cut = true
                 searchEducationalElement(educationalElement, cut, updatedToken)
@@ -676,6 +621,12 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             console.warn('Найден дублирующий topic, для исправления он был удалён', JSON.stringify(educationalElement))
             await db.delete('topics', educationalElement._id)
             educationalElement._id = newTopic._id
+            if (newTopic.inputName && !educationalElement.inputName) {
+                educationalElement.inputName = newTopic.inputName
+            }
+            if (newTopic.inputIndex != null && educationalElement.inputIndex == null) {
+                educationalElement.inputIndex = newTopic.inputIndex
+            }
         }
     }
     if (educationalElement.id !== foundEE.id) {
@@ -687,6 +638,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     if (educationalElement.code !== foundEE.number) {
         educationalElement.code = foundEE.number
     }
+    delete educationalElement.dirty
     // educationalElement.completed = completed
     // educationalElement.status = status
     await db.put('topics', educationalElement)
@@ -791,7 +743,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 })
 
 chrome.runtime.onConnect.addListener((port) => {
-    // runningTab = port.sender.tab.id
     port.onMessage.addListener(async (message) => {
         await initializeFunc
         setReloadTabTimer()
@@ -804,7 +755,9 @@ chrome.runtime.onConnect.addListener((port) => {
             } else {
                 searchedOnServer = true
                 const result = await getAnswersByTopicFromServer(message.question.topics[0])
-                if (!result) {
+                if (result) {
+                    topicKey = result._id
+                } else {
                     topicKey = await db.put('topics', {name: message.question.topics[0]})
                     console.log('Внесена новая тема в базу', message.question.topics[0])
                 }
@@ -864,7 +817,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         console.log('добавлены новые варианты ответов', question)
                     }
                     question.answers[answerHash].lastUsedAnswers = answers
-                    port.postMessage({answers, question, answerHash})
+                    port?.postMessage({answers, question, answerHash})
                 // если найден и вопрос и к нему вариант ответов
                 } else {
                     if (!question.lastOrder) question.lastOrder = {}
@@ -882,7 +835,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
                         console.log('отправлен ответ', question)
-                        port.postMessage({answers: question.correctAnswers[answerHash], question, correct: true, answerHash})
+                        port?.postMessage({answers: question.correctAnswers[answerHash], question, correct: true, answerHash})
                     // если нет правильных ответов, предлагаем рандомный предполагаемый вариант правильного ответа
                     } else {
                         let combination = question.answers[answerHash].combinations?.[Math.floor(Math.random()*question.answers[answerHash].combinations?.length)]
@@ -926,7 +879,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                         }
                         question.answers[answerHash].lastUsedAnswers = answers
-                        port.postMessage({answers, question, answerHash})
+                        port?.postMessage({answers, question, answerHash})
                     }
                 }
                 if (!question.topics.includes(topicKey)) {
@@ -947,7 +900,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.topics = [topicKey]
                 console.log('добавлен новый вопрос', question)
                 question.answers[answerHash].lastUsedAnswers = answers
-                port.postMessage({answers, question, answerHash})
+                port?.postMessage({answers, question, answerHash})
                 await db.put('questions', question)
             }
         // сохранение результатов теста с правильными и не правильными ответами
@@ -956,8 +909,10 @@ chrome.runtime.onConnect.addListener((port) => {
             for (const resultQuestion of message.results) {
                 let topicKey = await db.getKeyFromIndex('topics', 'name', resultQuestion.topics[0])
                 if (!topicKey) {
-                    const result = await getAnswersByTopicFromServer(message.question.topics[0])
-                    if (!result) {
+                    const result = await getAnswersByTopicFromServer(resultQuestion.topics[0])
+                    if (result) {
+                        topicKey = result._id
+                    } else {
                         topicKey = await db.put('topics', {name: resultQuestion.topics[0]})
                         console.log('Внесена новая тема в базу', resultQuestion.topics[0])
                     }
@@ -1177,7 +1132,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                 }
             }
-            port.postMessage({stats})
+            port?.postMessage({stats})
         } else if (message.running != null || message.collectAnswers != null) {
             if (message.running || message.collectAnswers) {
                 if (message.collectAnswers) collectAnswers = message.collectAnswers
@@ -1190,7 +1145,7 @@ chrome.runtime.onConnect.addListener((port) => {
             // TODO это конечно безобразие но другого варианта нет как проходить тесты в которых названии не соответсвует
             //  данный костыль чревато тем что если пользователь откроет сам сторонний тест то расширение ошибочно засчитает другой тест как завершённый
             if (!educationalElement && !message.hasTest) {
-                educationalElement = await db.getFromIndex('topics', 'completed', 0)
+                educationalElement = await db.getFromIndex('topics', 'completed, inputIndex', IDBKeyRange.bound([0, 0], [0, Infinity]))
             }
             if (educationalElement) {
                 if (message.error) {
@@ -1198,9 +1153,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     educationalElement.completed = 2
                     educationalElement.error = message.error
                 } else {
-                    // TODO временно
-                    // educationalElement.completed = 1
-                    delete educationalElement.completed
+                    educationalElement.completed = 1
                 }
                 await db.put('topics', educationalElement)
             }
@@ -1228,9 +1181,9 @@ chrome.runtime.onConnect.addListener((port) => {
             }
         }
         waitUntilState(false)
+        port = null
     })
 
-    self.port = port
 })
 
 // https://www.kodeclik.com/array-combinations-javascript/
@@ -1283,7 +1236,7 @@ async function getAnswersByTopicFromServer(topic) {
             for (const question of json.questions) {
                 await joinQuestion(question)
             }
-            return true
+            return json.topic
         }
     } catch (error) {
         console.error(error)

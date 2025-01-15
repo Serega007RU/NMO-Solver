@@ -87,6 +87,60 @@ header {
 	margin: auto 0;
 }
 
+.topics li::before {
+	cursor: pointer;
+	width: 30px;
+	display: inline-block;
+	/* padding-right: 10px; */
+	content: attr(data-before);
+}
+
+.topics {
+	overflow: auto;
+	text-overflow: unset;
+	/*display: block;*/
+	/* padding-left: 40px; */
+	resize: none;
+	line-height: initial;
+	--width: max-content;
+	list-style-type: none;
+	white-space: nowrap;
+}
+
+.topics li:nth-child(odd) {
+	background: #80808059;
+}
+
+.topics li  {
+	min-width: var(--width);
+	width: 100%;
+	/*display: table-caption;*/
+}
+
+[data-tooltip]::after {
+	content: attr(data-tooltip); /* Получаем текст из атрибута data-tooltip */
+	position: absolute;
+	right: 71%; /* Расположение слева от элемента */
+	margin-right: 10px; /* Отступ между текстом и tooltip */
+	/* top: 140%; */
+	/* transform: translateY(-50%); */
+	background-color: #333;
+	color: #fff;
+	padding: 5px 10px;
+	border-radius: 5px;
+	white-space: nowrap;
+	opacity: 0; /* Скрыт по умолчанию */
+	visibility: hidden;
+	transition: opacity 0.3s ease, visibility 0.3s ease;
+	font-size: 14px;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+[data-tooltip]:hover::after {
+	opacity: 1; /* Показываем подсказку при наведении */
+	visibility: visible;
+}
+
 #telegram {
 	position: absolute;
 	right: 10px;
