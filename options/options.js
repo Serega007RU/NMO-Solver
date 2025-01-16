@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         if (topic.completed) {
             topic.completed = 0
             delete topic.error
-            event.target.setAttribute('data-before', '')
+            event.target.setAttribute('data-before', 'ㅤ')
             event.target.removeAttribute('data-tooltip')
             await db.put('topics', topic)
         }
@@ -333,7 +333,7 @@ function updateTopic(topic, element) {
     } else if (topic.completed === 2) {
         element.setAttribute('data-before', '❌')
     } else {
-        element.setAttribute('data-before', '')
+        element.setAttribute('data-before', 'ㅤ')
     }
     if (topic.error) {
         element.setAttribute('data-tooltip', topic.error)
@@ -374,7 +374,7 @@ async function updateTopics(elTopics) {
     for (const [index, li] of Array.from(elTopics.children).entries()) {
         const text = li.innerText.trim()
         if (!text) {
-            li.setAttribute('data-before', '')
+            li.setAttribute('data-before', 'ㅤ')
             continue
         }
 
@@ -433,3 +433,29 @@ function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/*Звезды на кнопке доната*/
+let rand = Math.random()
+let map = document.querySelector('#donate')
+
+function makeStar() {
+    var newstar = document.createElement('div')
+    newstar.style.backgroundColor = '#fff'
+    newstar.style.borderRadius = '50%'
+    newstar.style.position = 'absolute'
+    newstar.style.top = Math.random()*100 + '%'
+    newstar.style.left = Math.random()*100 + '%'
+    newstar.style.height = Math.random()*3 + 'px'
+    newstar.style.width = newstar.style.height
+    newstar.classList.add('star')
+    var glow = Math.random()*10
+    newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
+    newstar.style.animationDuration = Math.random()*3+1 + 's'
+    map.appendChild(newstar)
+
+    var stArr = document.querySelectorAll('.star')
+    if (stArr.length >= 100){
+        clearInterval(fadeInt)
+    }
+}
+
+let fadeInt = setInterval(makeStar, 1500)

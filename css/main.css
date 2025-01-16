@@ -17,19 +17,31 @@ header {
 }
 
 .nav-head {
+	justify-content: center;
+	display: flex;
 	letter-spacing: .5px;
 	text-align: center;
 	width: 230px;
 	font-size: 20px;
 	text-transform: uppercase;
 	font-weight: lighter;
-	padding-bottom: 7px;
+	padding-bottom: 3px;
 	color: #212121;
 	border-bottom: 2px solid #212121;
-	margin: 130px auto 0;
+	margin: 60px auto 0;
+}
+
+.nav-head img {
+	height: 30px;
+	width: 30px;
+}
+
+.nav-head div {
+	margin: auto 5px;
 }
 
 .description {
+	margin-bottom: 15px;
 	font-size: 14px;
 	font-style: italic;
 }
@@ -87,15 +99,8 @@ header {
 	margin: auto 0;
 }
 
-.topics li::before {
-	cursor: pointer;
-	width: 30px;
-	display: inline-block;
-	/* padding-right: 10px; */
-	content: attr(data-before);
-}
-
 .topics {
+	outline: none;
 	overflow: auto;
 	text-overflow: unset;
 	/*display: block;*/
@@ -107,28 +112,39 @@ header {
 	white-space: nowrap;
 }
 
-.topics li:nth-child(odd) {
+/*.topics li:nth-child(odd) {
 	background: #80808059;
-}
+}*/
 
-.topics li  {
+.topics li {
+	border-bottom: solid 1px #c5c5c5;
 	min-width: var(--width);
 	width: 100%;
+	font-style: italic;
 	/*display: table-caption;*/
 }
 
-[data-tooltip]::after {
+.topics li::before {
+	cursor: help;
+	width: 30px;
+	display: inline-block;
+	/* padding-right: 10px; */
+	content: attr(data-before);
+}
+
+.topics [data-tooltip]::after {
 	content: attr(data-tooltip); /* Получаем текст из атрибута data-tooltip */
-	position: absolute;
-	right: 71%; /* Расположение слева от элемента */
+	position: fixed;
+	top: 200px;
+	left: calc(50% - 100px);
+	text-align: center;
+	width: 250px;
 	margin-right: 10px; /* Отступ между текстом и tooltip */
-	/* top: 140%; */
-	/* transform: translateY(-50%); */
 	background-color: #333;
 	color: #fff;
 	padding: 5px 10px;
 	border-radius: 5px;
-	white-space: nowrap;
+	white-space: pre-wrap;
 	opacity: 0; /* Скрыт по умолчанию */
 	visibility: hidden;
 	transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -136,13 +152,13 @@ header {
 	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-[data-tooltip]:hover::after {
+.topics [data-tooltip]:hover::after {
 	opacity: 1; /* Показываем подсказку при наведении */
 	visibility: visible;
 }
 
 #telegram {
-	position: absolute;
+	position: fixed;
 	right: 10px;
 	bottom: 10px;
 	transition: .3s;
@@ -155,6 +171,96 @@ header {
 #telegram img {
 	width: 50px;
 	height: 50px;
+}
+
+#donate {
+	z-index: 1;
+	left: 0;
+	bottom: 0;
+	position: fixed;
+}
+
+#donate .star {
+	pointer-events: none;
+	animation-name: fade;
+	animation-iteration-count: infinite;
+	animation-direction: alternate;
+	animation-fill-mode: both;
+	animation-timing-function: linear;
+}
+
+@keyframes fade {
+	0% {
+		opacity: 0%;
+	}
+	100% {
+		opacity: 100%;
+	}
+}
+
+#donate .button {
+	font-weight: 600;
+	display: inline-block;
+	margin: 20px 20px 10px 10px;
+	text-decoration: none;
+	background: #c17c1f;
+	background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.4) 100%), linear-gradient(to right, #EDC113FF 0%, #C17C1F 50%, #EDC113FF 100%);
+	background-position: 0 0;
+	background-size: 200% 100%;
+	border-radius: 10px;
+	color: #fff;
+	padding: 10px;
+	text-shadow: 1px 1px 5px #666;
+	-webkit-transition: all 800ms;
+	transition: all 800ms;
+
+	&:after {
+		border-left: 1px solid #4c4f00;
+		color: #352c00;
+		content: "❤";
+		font: 15px "FontAwesome";
+		padding: 10px 0 10px 10px;
+		margin-left: 10px;
+		-webkit-transition: all 600ms 200ms;
+		transition: all 600ms 200ms;
+	}
+
+	&:hover {
+		background-position: -100% 0;
+
+		&:after {
+			border-left: 1px solid #827700;
+			color: #fff;
+			text-shadow: 0 0 10px #000;
+		}
+	}
+}
+
+.import-from-site {
+	display: flex;
+	position: relative;
+	bottom: 39px;
+	left: 31px;
+	padding: 3px;
+	font-size: 15px;
+	float: right;
+	background: #8fb0ff;
+	outline: none;
+	border: none;
+	border-radius: 3px 10px 3px 10px;
+}
+
+.import-from-site div {
+	margin: auto 0;
+	color: #ffffff;
+}
+
+.import-from-site img {
+	width: 20px;
+	height: 20px;
+	padding-left: 5px;
+	margin-left: 5px;
+	border-left: 1px solid #ffffff;
 }
 
 nav {
@@ -213,6 +319,10 @@ main .block {
 	margin: 0 auto;
 	background: #d7e3fc;
 	border-radius: 10px;
+}
+
+.block[data-block="auto"] {
+	margin-top: 15px !important;
 }
 
 main .block.active {
