@@ -257,12 +257,9 @@ async function start(collectAnswers) {
             await randomWait()
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
-            if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
-                port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается', hasTest: true})
-                start()
-            } else {
-                port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается'})
-            }
+            const hasTest = document.querySelectorAll('.v-tabsheet-caption-close').length >= 1
+            port.postMessage({done: true, topic, error: 'Прохождение ситуационных задач не поддерживается', hasTest})
+            if (hasTest) start()
             return
         }
     }
@@ -301,12 +298,11 @@ async function start(collectAnswers) {
             await randomWait()
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
-            if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
-                port.postMessage({done: true, topic, hasTest: true})
+            const hasTest = document.querySelectorAll('.v-tabsheet-caption-close').length >= 1
+            port.postMessage({done: true, topic, hasTest})
+            if (hasTest) {
                 startRepeat = 0
                 start()
-            } else {
-                port.postMessage({done: true, topic})
             }
             return
         }
@@ -324,12 +320,9 @@ async function start(collectAnswers) {
             await randomWait()
 
             // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
-            if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
-                port.postMessage({done: true, topic, error: 'Нет ответов на данный тест', hasTest: true})
-                start()
-            } else {
-                port.postMessage({done: true, topic, error: 'Нет ответов на данный тест'})
-            }
+            const hasTest = document.querySelectorAll('.v-tabsheet-caption-close').length >= 1
+            port.postMessage({done: true, topic, error: 'Нет ответов на данный тест', hasTest})
+            if (hasTest) start()
             return
         }
     }

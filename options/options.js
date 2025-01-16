@@ -194,7 +194,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     elTopics.addEventListener('click', async (event) => {
         console.log(event.target, event.offsetX)
         if (event.offsetX > 30) return
-        const topic = await db.get('topics', event.target.id)
+        const topic = await db.get('topics', isNaN(event.target.id) ? event.target.id : Number(event.target.id))
         if (!topic) return
         if (topic.completed) {
             topic.completed = 0
@@ -204,6 +204,15 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             await db.put('topics', topic)
         }
     })
+})
+
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.updatedTopic) {
+        const li = document.getElementById(message.updatedTopic._id)
+        if (li) {
+            updateTopic(message.updatedTopic, li)
+        }
+    }
 })
 
 async function restoreOptions() {
@@ -308,14 +317,7 @@ async function restoreTopics() {
         const topic = cursor.value
         const li = document.createElement('li')
         li.innerText = topic.inputName
-        if (topic.completed === 1) {
-            li.setAttribute('data-before', '✅')
-        } else if (topic.completed === 2) {
-            li.setAttribute('data-before', '❌')
-            if (topic.error) li.setAttribute('data-tooltip', topic.error)
-        } else {
-            li.setAttribute('data-before', '')
-        }
+        updateTopic(topic, li)
         li.id = topic._id
         fragment.append(li)
     }
@@ -323,6 +325,21 @@ async function restoreTopics() {
     const elTopics = document.querySelector('.topics')
     elTopics.replaceChildren()
     elTopics.append(fragment)
+}
+
+function updateTopic(topic, element) {
+    if (topic.completed === 1) {
+        element.setAttribute('data-before', '✅')
+    } else if (topic.completed === 2) {
+        element.setAttribute('data-before', '❌')
+    } else {
+        element.setAttribute('data-before', '')
+    }
+    if (topic.error) {
+        element.setAttribute('data-tooltip', topic.error)
+    } else {
+        element.removeAttribute('data-tooltip')
+    }
 }
 
 async function updateTopics(elTopics) {
@@ -396,14 +413,7 @@ async function updateTopics(elTopics) {
             if (object.name && !topic.name) {
                 topic.name = object.name
             }
-            if (topic.completed === 1) {
-                li.setAttribute('data-before', '✅')
-            } else if (topic.completed === 2) {
-                li.setAttribute('data-before', '❌')
-                if (topic.error) li.setAttribute('data-tooltip', topic.error)
-            } else {
-                li.setAttribute('data-before', '')
-            }
+            updateTopic(topic, li)
             console.log('Обновлён', topic)
         } else {
             topic = object
@@ -411,7 +421,7 @@ async function updateTopics(elTopics) {
             topic.inputIndex = index
             topic.inputName = text
             topic.dirty = 1
-            li.setAttribute('data-before', '')
+            updateTopic(topic, li)
             console.log('Добавлен', topic)
         }
         const key = await topicsStore.put(topic)
