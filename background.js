@@ -16,6 +16,7 @@ let started = 0
 let startFunc
 let settings
 // let tempCabinet
+let lastScore
 
 const dbVersion = 16
 const initializeFunc = init()
@@ -55,6 +56,7 @@ async function init() {
                 maxReloadTab: 7,
                 maxReloadTest: 30,
                 goodScore: false,
+                selectionMethod: true,
                 timeoutReloadTabMin: 15000,
                 timeoutReloadTabMax: 90000
             }, 'settings')
@@ -86,6 +88,9 @@ async function init() {
             transaction.objectStore('topics').createIndex('dirty', 'dirty')
             transaction.objectStore('topics').createIndex('inputIndex', 'inputIndex')
             transaction.objectStore('topics').createIndex('completed, inputIndex', ['completed', 'inputIndex'])
+            settings = await transaction.objectStore('other').get('settings')
+            settings.selectionMethod = true
+            await transaction.objectStore('other').put(settings, 'settings')
         }
 
         console.log('Обновление базы данных завершено')
@@ -350,7 +355,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.status) {
         (async () => {
             await initializeFunc
-            sendResponse({running: runningTab === sender.tab.id, collectAnswers, settings})
+            sendResponse({running: runningTab === sender.tab.id, collectAnswers, settings, lastScore})
         })()
         return true
     } else if (message.reloadPage) {
@@ -412,6 +417,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 async function start(tabId, hasTest, done, hasError) {
     reloaded = 0
+    lastScore = null
     clearTimeout(reloadTabTimer)
     if (done) {
         started = 0
@@ -747,12 +753,10 @@ chrome.runtime.onConnect.addListener((port) => {
         await initializeFunc
         setReloadTabTimer()
         if (message.question) {
+            lastScore = null
             let searchedOnServer
-            let topicKey
-            const topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
-            if (topic) {
-                topicKey = topic._id
-            } else {
+            let topicKey = await db.getKeyFromIndex('topics', 'name', message.question.topics[0])
+            if (!topicKey) {
                 searchedOnServer = true
                 const result = await getAnswersByTopicFromServer(message.question.topics[0])
                 if (result) {
@@ -906,17 +910,20 @@ chrome.runtime.onConnect.addListener((port) => {
         // сохранение результатов теста с правильными и не правильными ответами
         } else if (message.results) {
             let stats = {correct: 0, taken: 0, ignored: 0}
-            for (const resultQuestion of message.results) {
-                let topicKey = await db.getKeyFromIndex('topics', 'name', resultQuestion.topics[0])
-                if (!topicKey) {
-                    const result = await getAnswersByTopicFromServer(resultQuestion.topics[0])
-                    if (result) {
-                        topicKey = result._id
-                    } else {
-                        topicKey = await db.put('topics', {name: resultQuestion.topics[0]})
-                        console.log('Внесена новая тема в базу', resultQuestion.topics[0])
-                    }
+
+            let topicKey = await db.getKeyFromIndex('topics', 'name', message.topic)
+            if (!topicKey) {
+                const result = await getAnswersByTopicFromServer(message.topic)
+                if (result) {
+                    topicKey = result._id
+                } else {
+                    topicKey = await db.put('topics', {name: message.topic})
+                    console.log('Внесена новая тема в базу', message.topic)
                 }
+            }
+            lastScore = message.lastScore
+
+            for (const resultQuestion of message.results) {
                 let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
                 if (!key) {
                     const result = await getAnswersByQuestionFromServer(resultQuestion.question)
@@ -1140,6 +1147,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 // chrome.action.setBadgeText({text: 'ON'})
             }
         } else if (message.done) {
+            lastScore = null
             let educationalElement = await db.getFromIndex('topics', 'name', message.topic)
             console.log('закончено', message.topic)
             // TODO это конечно безобразие но другого варианта нет как проходить тесты в которых названии не соответсвует
@@ -1326,6 +1334,7 @@ function setReloadTabTimer() {
 
 function stop(resetAction=true) {
     runningTab = null
+    lastScore = null
     collectAnswers = null
     stopRunning = true
     started = 0

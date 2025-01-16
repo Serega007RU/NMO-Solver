@@ -9,12 +9,14 @@ let running
 let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, sentResults
 
 let settings
+let lastScore
 
 let shadowRoot, highLightDiv, statusDiv, statusBody, observerAll, observerResize
 
 
 function osReceiveStatus(message) {
     if (message.settings) settings = message.settings
+    if (message.lastScore) lastScore = message.lastScore
     if (message.running) {
         stopRunning = false
         startRepeat = 0
@@ -308,14 +310,29 @@ async function start(collectAnswers) {
             }
             return
         }
-    // если мы находимся на странице системы обучения
-    }/* else if (document.querySelector('.v-app')) {
-        // Если вкладок нет, значит нам нечего решать
-        if (!document.querySelectorAll('.v-tabsheet-caption-close')?.length) {
-            port.postMessage({done: true})
+    } else if (!settings.selectionMethod && lastScore?.score?.includes('Оценка 2') && lastScore?.topic && !lastScore.topic.includes(' - Предварительное тестирование')) {
+        const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
+        if (topic === normalizeText(lastScore.topic)) {
+            // Нажимаем закрыть вкладку
+            await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
+            await wait(500)
+            await randomWait()
+
+            // подтверждаем закрытие вкладки
+            await attemptToClosePopups()
+            await wait(500)
+            await randomWait()
+
+            // Если вкладки всё ещё остались, проходим на них тесты, если нет вкладок, отправляем в background что мы закончили работать
+            if (document.querySelectorAll('.v-tabsheet-caption-close').length >= 1) {
+                port.postMessage({done: true, topic, error: 'Нет ответов на данный тест', hasTest: true})
+                start()
+            } else {
+                port.postMessage({done: true, topic, error: 'Нет ответов на данный тест'})
+            }
             return
         }
-    }*/
+    }
 
     let hasSuccessTest = false
     let countGood = 0
@@ -509,6 +526,7 @@ function sendResults() {
     sentResults = true
     if (statusBody) statusBody.textContent = 'Подождите, мы сохраняем результаты теста...'
     const correctAnswersElements = document.querySelectorAll('.questionList-item')
+    const sendObject = {}
     const results = []
     for (const el of correctAnswersElements) {
         const question = {
@@ -518,12 +536,15 @@ function sendResults() {
                 answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText(item.textContent)).sort()
             },
             correct: Boolean(el.querySelector('[svgicon="correct"]')),
-            topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
             lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
         }
         results.push(question)
     }
-    port.postMessage({results})
+    const topic = document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title').textContent
+    sendObject.topic = normalizeText(topic)
+    sendObject.results = results
+    sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
+    port.postMessage(sendObject)
 }
 
 // console.log('injected!')

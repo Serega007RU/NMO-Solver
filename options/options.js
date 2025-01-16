@@ -98,6 +98,10 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         settings.goodScore = event.target.checked
         onChangedSettings()
     })
+    document.querySelector('#SelectionMethod').addEventListener('change', (event) => {
+        settings.selectionMethod = event.target.checked
+        onChangedSettings()
+    })
     document.querySelector('#TimeoutReloadTabMin').addEventListener('input',  (event) => {
         if (event.target.valueAsNumber !== undefined) {
             settings.timeoutReloadTabMin = event.target.valueAsNumber * 1000
@@ -231,6 +235,7 @@ async function restoreOptions() {
     document.querySelector('#MaxReloadTab').value = settings.maxReloadTab
     document.querySelector('#MaxReloadTest').value = settings.maxReloadTest
     document.querySelector('#GoodScore').checked = settings.goodScore
+    document.querySelector('#SelectionMethod').checked = settings.selectionMethod
     document.querySelector('#TimeoutReloadTabMin').value = settings.timeoutReloadTabMin / 1000
     document.querySelector('#TimeoutReloadTabMin').max = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').value = settings.timeoutReloadTabMax / 1000
