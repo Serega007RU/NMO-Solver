@@ -100,6 +100,7 @@ header {
 }
 
 .topics {
+	width: 100%;
 	outline: none;
 	overflow: auto;
 	text-overflow: unset;
@@ -117,19 +118,22 @@ header {
 }*/
 
 .topics li {
-	border-bottom: solid 1px #c5c5c5;
+	border-bottom: solid 1px #7b7b7b;
 	min-width: var(--width);
 	width: 100%;
+	height: 23px;
+	line-height: 23px;
 	font-style: italic;
 	/*display: table-caption;*/
 }
 
 .topics li::before {
-	cursor: help;
+	cursor: pointer;
 	width: 30px;
 	display: inline-block;
 	/* padding-right: 10px; */
 	content: attr(data-before);
+	font-style: normal;
 }
 
 .topics [data-tooltip]::after {
@@ -155,6 +159,10 @@ header {
 .topics [data-tooltip]:hover::after {
 	opacity: 1; /* Показываем подсказку при наведении */
 	visibility: visible;
+}
+
+.topics li:empty {
+	text-indent: 30px;
 }
 
 #telegram {

@@ -127,6 +127,10 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     let oldValueTopics = elTopics.innerText
     let savedCursor
     elTopics.addEventListener('input', () => {
+        if (!elTopics.innerHTML) {
+            elTopics.append(document.createElement('li'))
+            return
+        }
         if (oldValueTopics === elTopics.innerText) {
             if (savedCursor) {
                 setCursorIndex(elTopics, savedCursor)
@@ -138,7 +142,8 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         let maxWidth = 0
         for (const [index, li] of Array.from(elTopics.children).entries()) {
             li.removeAttribute('style')
-            // li.removeAttribute('data-before')
+            li.removeAttribute('id')
+            li.removeAttribute('data-before')
             li.removeAttribute('data-tooltip')
             if (li.firstElementChild?.tagName === 'BR') {
                 li.firstElementChild.remove()
@@ -190,6 +195,11 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             event.preventDefault()
         }
     })
+    let maxWidth = 0
+    for (const li of elTopics.children) {
+        maxWidth = Math.max(li.clientWidth, maxWidth)
+    }
+    elTopics.style.setProperty('--width', maxWidth + 'px')
 
     elTopics.addEventListener('click', async (event) => {
         console.log(event.target, event.offsetX)
@@ -199,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         if (topic.completed) {
             topic.completed = 0
             delete topic.error
-            event.target.setAttribute('data-before', 'ㅤ')
+            event.target.removeAttribute('data-before')
             event.target.removeAttribute('data-tooltip')
             await db.put('topics', topic)
         }
@@ -332,8 +342,6 @@ function updateTopic(topic, element) {
         element.setAttribute('data-before', '✅')
     } else if (topic.completed === 2) {
         element.setAttribute('data-before', '❌')
-    } else {
-        element.setAttribute('data-before', 'ㅤ')
     }
     if (topic.error) {
         element.setAttribute('data-tooltip', topic.error)
@@ -373,10 +381,7 @@ async function updateTopics(elTopics) {
 
     for (const [index, li] of Array.from(elTopics.children).entries()) {
         const text = li.innerText.trim()
-        if (!text) {
-            li.setAttribute('data-before', 'ㅤ')
-            continue
-        }
+        if (!text) continue
 
         const ee = text.split(/\t/)
         const object = {}
@@ -402,6 +407,7 @@ async function updateTopics(elTopics) {
             topic = await topicsStore.index('name').get(object.name)
         }
         if (topic) {
+            if (topic.completed == null) topic.completed = 0
             topic.inputIndex = index
             topic.inputName = text
             if (object.id && !topic.id) {
@@ -434,28 +440,28 @@ function wait(ms) {
 }
 
 /*Звезды на кнопке доната*/
-let rand = Math.random()
-let map = document.querySelector('#donate')
-
-function makeStar() {
-    var newstar = document.createElement('div')
-    newstar.style.backgroundColor = '#fff'
-    newstar.style.borderRadius = '50%'
-    newstar.style.position = 'absolute'
-    newstar.style.top = Math.random()*100 + '%'
-    newstar.style.left = Math.random()*100 + '%'
-    newstar.style.height = Math.random()*3 + 'px'
-    newstar.style.width = newstar.style.height
-    newstar.classList.add('star')
-    var glow = Math.random()*10
-    newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
-    newstar.style.animationDuration = Math.random()*3+1 + 's'
-    map.appendChild(newstar)
-
-    var stArr = document.querySelectorAll('.star')
-    if (stArr.length >= 100){
-        clearInterval(fadeInt)
-    }
-}
-
-let fadeInt = setInterval(makeStar, 1500)
+// let rand = Math.random()
+// let map = document.querySelector('#donate')
+//
+// function makeStar() {
+//     var newstar = document.createElement('div')
+//     newstar.style.backgroundColor = '#fff'
+//     newstar.style.borderRadius = '50%'
+//     newstar.style.position = 'absolute'
+//     newstar.style.top = Math.random()*100 + '%'
+//     newstar.style.left = Math.random()*100 + '%'
+//     newstar.style.height = Math.random()*3 + 'px'
+//     newstar.style.width = newstar.style.height
+//     newstar.classList.add('star')
+//     var glow = Math.random()*10
+//     newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
+//     newstar.style.animationDuration = Math.random()*3+1 + 's'
+//     map.appendChild(newstar)
+//
+//     var stArr = document.querySelectorAll('.star')
+//     if (stArr.length >= 100){
+//         clearInterval(fadeInt)
+//     }
+// }
+//
+// let fadeInt = setInterval(makeStar, 1500)

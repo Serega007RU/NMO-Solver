@@ -18,6 +18,8 @@ let settings
 // let tempCabinet
 let lastScore
 
+class TopicError extends Error {}
+
 const dbVersion = 16
 const initializeFunc = init()
 waitUntil(initializeFunc)
@@ -495,15 +497,22 @@ async function checkOrGetTopic() {
             } catch (error) {
                 if (stopRunning) return 'error'
                 console.warn(error)
-                if (error.message.startsWith('Topic error, ')) {
-                    if (error.message === 'Topic error, Уже пройдено') {
+                if (error instanceof TopicError) {
+                    if (error.message === 'Уже пройдено') {
                         educationalElement.completed = 1
-                        await db.put('topics', educationalElement)
-                        continue
+                    } else {
+                        educationalElement.error = error.message
+                        educationalElement.completed = 2
                     }
-                    educationalElement.error = error.message.replace('Topic error, ', '')
-                    educationalElement.completed = 2
                     await db.put('topics', educationalElement)
+                    if (educationalElement.inputIndex != null) {
+                        chrome.runtime.sendMessage({updatedTopic: educationalElement}, function () {
+                            const lastError = chrome.runtime.lastError?.message
+                            if (!lastError.includes('Receiving end does not exist')) {
+                                console.error(lastError)
+                            }
+                        })
+                    }
                     continue
                 } else if (
                     !error.message.startsWith('bad code 5') &&
@@ -575,7 +584,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         if (!json?.elements?.length) {
             if (cut || !educationalElement.code) {
                 console.log(json)
-                throw Error('Topic error, По заданному названию ничего не найдено')
+                throw TopicError('По заданному названию ничего не найдено')
             } else {
                 cut = true
                 searchEducationalElement(educationalElement, cut, updatedToken)
@@ -608,7 +617,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     }
 
     if (!foundEE) {
-        throw Error('Topic error, Не найдено')
+        throw TopicError('Не найдено')
     }
 
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
@@ -651,7 +660,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
 
     if (foundEE.iomHost?.name) {
         if (!foundEE.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
-            throw Error('Topic error, Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+            throw TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
         }
     }
 
@@ -666,7 +675,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             let json = await response.json()
             await checkErrors(json, updatedToken)
             if (json.globalErrors?.[0]?.code === 'ELEMENT_CANNOT_BE_ADDED_TO_PLAN_EXCEPTION') {
-                throw Error('Topic error, ' + JSON.stringify(json))
+                throw TopicError(JSON.stringify(json))
             }
         }
         if (settings.clickWaitMax && settings.clickWaitMax > 500) {
@@ -679,7 +688,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             console.warn('данный элемент уже пройден пользователем', foundEE)
             // TODO мы не можем пропустить открытие теста не смотря на то что оно уже пройдено
             //  так как иногда бывает зависание теста (с пропажей кнопок получения варианта, вперёд и назад)
-            // throw Error('Topic error, Уже пройдено')
+            // throw TopicError('Уже пройдено')
         }
     }
 
@@ -698,7 +707,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         throw Error('Не была получена ссылка по теме ' + educationalElement.name)
     }
     if (!new URL(json.url).host.includes('edu.rosminzdrav.ru')) {
-        throw Error('Topic error, Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+        throw TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
     }
     // tempCabinet = null
     return json.url
@@ -736,7 +745,7 @@ async function checkErrors(json, updatedToken) {
             throw Error('notFound')
         } else {
             tempCabinet = null
-            throw Error('Topic error, Не найдено')
+            throw TopicError('Не найдено')
         }
     }*/
 }
