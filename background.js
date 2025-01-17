@@ -60,7 +60,8 @@ async function init() {
                 goodScore: false,
                 selectionMethod: true,
                 timeoutReloadTabMin: 15000,
-                timeoutReloadTabMax: 90000
+                timeoutReloadTabMax: 90000,
+                offlineMode: false
             }, 'settings')
             return
         }
@@ -92,6 +93,8 @@ async function init() {
             transaction.objectStore('topics').createIndex('completed, inputIndex', ['completed', 'inputIndex'])
             settings = await transaction.objectStore('other').get('settings')
             settings.selectionMethod = true
+            settings.offlineMode = false
+            settings.goodScore = false
             await transaction.objectStore('other').put(settings, 'settings')
         }
 
@@ -397,7 +400,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     if (runningTab || (startFunc && !startFunc.done)) {
         console.warn('Работа расширения остановлена по запросу пользователя')
-        chrome.tabs.sendMessage(runningTab, {stop: true})
+        if (runningTab) chrome.tabs.sendMessage(runningTab, {stop: true})
         stop()
     } else {
         let response
@@ -405,7 +408,7 @@ chrome.action.onClicked.addListener(async (tab) => {
             response = await chrome.tabs.sendMessage(tab.id, {hasTest: true})
             if (!response) throw Error('Receiving end does not exist')
         } catch (error) {
-            if (error.message.includes('Receiving end does not exist')) {
+            if (error.message.includes('Receiving end does not exist') || error.message.includes('message port closed before a response was received')) {
                 showNotification('Ошибка', 'Похоже на данной вкладке открыт НЕ портал НМО (или что-то не относящееся к тестам ОИМ), если это не так - попробуйте обновить страницу')
             } else {
                 showNotification('S Непредвиденная ошибка', error.message)
@@ -508,7 +511,7 @@ async function checkOrGetTopic() {
                     if (educationalElement.inputIndex != null) {
                         chrome.runtime.sendMessage({updatedTopic: educationalElement}, function () {
                             const lastError = chrome.runtime.lastError?.message
-                            if (!lastError.includes('Receiving end does not exist')) {
+                            if (!lastError.includes('Receiving end does not exist') && !lastError.includes('message port closed before a response was received')) {
                                 console.error(lastError)
                             }
                         })
@@ -533,14 +536,23 @@ async function checkOrGetTopic() {
     return 'null'
 }
 
-async function searchEducationalElement(educationalElement, cut, updatedToken) {
+async function searchEducationalElement(educationalElement, cut, inputName) {
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 
-    if (cut) {
-        educationalElement.name = educationalElement.name.slice(0, -10)
-        console.log('ищем (урезанное название)', educationalElement)
+    let searchQuery
+    if (inputName) {
+        searchQuery = educationalElement.inputName
+        console.log('ищем (по пользовательскому названию)', searchQuery)
+    } else if (cut) {
+        searchQuery = educationalElement.name.slice(0, -10)
+        console.log('ищем (урезанное название)', searchQuery)
     } else {
+        searchQuery = educationalElement.name
         console.log('ищем', educationalElement)
+        if (educationalElement.dirty && educationalElement.name) {
+            // TODO следует учесть элементы без name (если задан чисто id)
+            educationalElement = await getAnswersByTopicFromServer(educationalElement.name, educationalElement)
+        }
     }
 
     const authData = await db.get('other', 'authData')
@@ -556,7 +568,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
-        await checkErrors(json, updatedToken)
+        await checkErrors(json)
         foundEE = json
     } else {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/search`, {
@@ -567,7 +579,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
                 limit: 10,
                 programId: null,
                 educationalOrganizationIds: [],
-                freeTextQuery: educationalElement.name.trim(),
+                freeTextQuery: searchQuery.trim(),
                 elementType: "iom",
                 offset: 0,
                 startDate: null,
@@ -580,15 +592,19 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
-        await checkErrors(json, updatedToken)
+        await checkErrors(json)
         if (!json?.elements?.length) {
-            if (cut || !educationalElement.code) {
+            if (!cut && educationalElement.code) {
+                cut = true
+                searchEducationalElement(educationalElement, cut, inputName)
+                return
+            } else if (!inputName && educationalElement.inputName) {
+                inputName = true
+                searchEducationalElement(educationalElement, cut, inputName)
+                return
+            } else {
                 console.log(json)
                 throw TopicError('По заданному названию ничего не найдено')
-            } else {
-                cut = true
-                searchEducationalElement(educationalElement, cut, updatedToken)
-                return
             }
         }
         for (const element of json.elements) {
@@ -600,7 +616,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
             })
             if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
             let json2 = await response.json()
-            await checkErrors(json2, updatedToken)
+            await checkErrors(json2)
             if (educationalElement.code) {
                 if (educationalElement.code === json2.number) {
                     foundEE = json2
@@ -673,7 +689,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         if (!response.ok) {
             let json = await response.json()
-            await checkErrors(json, updatedToken)
+            await checkErrors(json)
             if (json.globalErrors?.[0]?.code === 'ELEMENT_CANNOT_BE_ADDED_TO_PLAN_EXCEPTION') {
                 throw TopicError(JSON.stringify(json))
             }
@@ -699,7 +715,7 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     })
     if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
     let json = await response.json()
-    await checkErrors(json, updatedToken)
+    await checkErrors(json)
     console.log('открываем', educationalElement.name)
     if (!json.url) {
         console.log(json)
@@ -713,9 +729,9 @@ async function searchEducationalElement(educationalElement, cut, updatedToken) {
     return json.url
 }
 
-async function checkErrors(json, updatedToken) {
+async function checkErrors(json) {
     if (json.error) {
-        if ((json.error_description?.includes('token expired') || json.error_description?.includes('access token')) && !updatedToken) {
+        if (json.error_description?.includes('token expired') || json.error_description?.includes('access token')) {
             const authData = await db.get('other', 'authData')
             const cabinet = await db.get('other', 'cabinet')
             if (authData?.refresh_token) {
@@ -765,14 +781,9 @@ chrome.runtime.onConnect.addListener((port) => {
             lastScore = null
             let searchedOnServer
             let topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
-            if (!topic) {
+            if (!topic || topic.dirty) {
                 searchedOnServer = true
-                topic = await getAnswersByTopicFromServer(message.question.topics[0])
-                if (!topic) {
-                    topic = {name: message.question.topics[0]}
-                    topic._id = await db.put('topics', topic)
-                    console.log('Внесена новая тема в базу', message.question.topics[0])
-                }
+                topic = await getAnswersByTopicFromServer(message.question.topics[0], topic)
             }
             let key = await db.getKeyFromIndex('questions', 'question', message.question.question)
             if (!key) {
@@ -920,13 +931,8 @@ chrome.runtime.onConnect.addListener((port) => {
             let stats = {correct: 0, taken: 0, ignored: 0}
 
             let topic = await db.getFromIndex('topics', 'name', message.topic)
-            if (!topic) {
-                topic = await getAnswersByTopicFromServer(message.topic)
-                if (!topic) {
-                    topic = {name: message.topic}
-                    topic._id = await db.put('topics', {name: message.topic})
-                    console.log('Внесена новая тема в базу', message.topic)
-                }
+            if (!topic || topic.dirty) {
+                topic = await getAnswersByTopicFromServer(message.topic, topic)
             }
             lastScore = message.lastScore
 
@@ -1174,7 +1180,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (educationalElement.inputIndex != null) {
                     chrome.runtime.sendMessage({updatedTopic: educationalElement}, function () {
                         const lastError = chrome.runtime.lastError?.message
-                        if (!lastError.includes('Receiving end does not exist')) {
+                        if (!lastError.includes('Receiving end does not exist') && !lastError.includes('message port closed before a response was received')) {
                             console.error(lastError)
                         }
                     })
@@ -1238,6 +1244,7 @@ function getCombinations(items, multi) {
 }
 
 async function getAnswersByQuestionFromServer(question) {
+    if (settings.offlineMode) return
     try {
         const response = await fetch('https://serega007.ru/getQuestionByName', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: question})})
         const json = await response.json()
@@ -1249,20 +1256,36 @@ async function getAnswersByQuestionFromServer(question) {
     }
 }
 
-async function getAnswersByTopicFromServer(topic) {
+async function getAnswersByTopicFromServer(topicName, oldTopic) {
+    let topic
     try {
-        const response = await fetch('https://serega007.ru/getQuestionsByTopic', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: topic})})
-        const json = await response.json()
-        if (json) {
-            await db.put('topics', json.topic)
-            console.log('Внесена новая тема в базу', json.topic)
-            for (const question of json.questions) {
-                await joinQuestion(question)
+        if (!settings.offlineMode) {
+            const response = await fetch('https://serega007.ru/getQuestionsByTopic', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: topicName})})
+            const json = await response.json()
+            if (json) {
+                if (oldTopic) {
+                    topic = await joinTopics(oldTopic, json.topic)
+                } else {
+                    topic = json.topic
+                    await db.put('topics', json.topic)
+                    console.log('Внесена новая тема в базу', json.topic)
+                }
+                for (const question of json.questions) {
+                    await joinQuestion(question)
+                }
             }
-            return json.topic
         }
     } catch (error) {
         console.error(error)
+    }
+    if (topic) return topic
+    if (!oldTopic) {
+        const topic = {name: topicName}
+        topic._id = await db.put('topics', topic)
+        console.log('Внесена новая тема в базу', topicName)
+        return topic
+    } else {
+        return oldTopic
     }
 }
 
@@ -1309,6 +1332,77 @@ async function joinQuestion(newQuestion) {
         console.log('С интернета обновлён вопрос', question)
         return question
     }
+}
+
+async function joinTopics(oldTopic, newTopic) {
+    delete oldTopic.dirty
+    delete newTopic.dirty
+    let changed
+    const topicsStore = db.transaction('topics', 'readwrite').store
+    if (oldTopic.id !== newTopic.id) {
+        changed = true
+        const newNewTopic = await topicsStore.index('id').get(newTopic.id)
+        if (newNewTopic) {
+            console.warn('Обнаружено тройное задвоение тем, исправляем')
+            oldTopic = joinTopic(oldTopic, newNewTopic)
+            await topicsStore.delete(newNewTopic._id)
+        }
+        oldTopic.id = newTopic.id
+    }
+    if (oldTopic.code !== newTopic.code) {
+        changed = true
+        const newNewTopic = await topicsStore.index('code').get(newTopic.code)
+        if (newNewTopic) {
+            console.warn('Обнаружено тройное задвоение тем, исправляем')
+            oldTopic = joinTopic(oldTopic, newNewTopic)
+            await topicsStore.delete(newNewTopic._id)
+        }
+        oldTopic.code = newTopic.code
+    }
+    if (oldTopic.name !== newTopic.name) {
+        changed = true
+        const newNewTopic = await topicsStore.index('name').get(newTopic.name)
+        if (newNewTopic) {
+            console.warn('Обнаружено тройное задвоение тем, исправляем')
+            oldTopic = joinTopic(oldTopic, newNewTopic)
+            await topicsStore.delete(newNewTopic._id)
+        }
+        oldTopic.name = newTopic.name
+    }
+    if (!oldTopic.inputName && newTopic.inputName) {
+        changed = true
+        oldTopic.inputName = newTopic.inputName
+    }
+    if (oldTopic.inputIndex == null && newTopic.inputIndex != null) {
+        changed = true
+        oldTopic.inputIndex = newTopic.inputIndex
+    }
+    if (changed) {
+        console.warn('Обнаружено задвоение тем, исправляем')
+        await topicsStore.put(oldTopic)
+    }
+    return oldTopic
+}
+
+function joinTopic(oldTopic, newTopic) {
+    delete oldTopic.dirty
+    delete newTopic.dirty
+    if (!oldTopic.id && newTopic.id) {
+        oldTopic.id = newTopic.id
+    }
+    if (!oldTopic.code && newTopic.code) {
+        oldTopic.code = newTopic.code
+    }
+    if (!oldTopic.name && newTopic.name) {
+        oldTopic.name = newTopic.name
+    }
+    if (!oldTopic.inputName && newTopic.inputName) {
+        oldTopic.inputName = newTopic.inputName
+    }
+    if (oldTopic.inputIndex == null && newTopic.inputIndex != null) {
+        oldTopic.inputIndex = newTopic.inputIndex
+    }
+    return oldTopic
 }
 
 function showNotification(title, message) {

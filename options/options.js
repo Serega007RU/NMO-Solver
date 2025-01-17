@@ -116,6 +116,10 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             onChangedSettings()
         }
     })
+    document.querySelector('#OfflineMode').addEventListener('change', (event) => {
+        settings.offlineMode = event.target.checked
+        onChangedSettings()
+    })
 
     // это просто один большой сплошной костыль заставляющий подобие нашего textarea работать с текстом без форматирования
     document.querySelector('.topics').addEventListener('paste', (event) => {
@@ -124,14 +128,14 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         document.execCommand('insertText', false, text)
     })
     const elTopics = document.querySelector('.topics')
-    let oldValueTopics = elTopics.innerText
+    let oldValueTopics = elTopics.innerHTML
     let savedCursor
     elTopics.addEventListener('input', () => {
         if (!elTopics.innerHTML) {
             elTopics.append(document.createElement('li'))
             return
         }
-        if (oldValueTopics === elTopics.innerText) {
+        if (oldValueTopics === elTopics.innerHTML) {
             if (savedCursor) {
                 setCursorIndex(elTopics, savedCursor)
                 savedCursor = null
@@ -145,7 +149,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             li.removeAttribute('id')
             // li.removeAttribute('data-before')
             li.removeAttribute('data-tooltip')
-            if (li.firstElementChild?.tagName === 'BR') {
+            while (li.firstElementChild?.tagName === 'BR') {
                 li.firstElementChild.remove()
             }
             if (li.firstElementChild) {
@@ -176,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
                 if (!savedCursor) savedCursor = getCursorIndex(elTopics)
                 li.innerHTML = li.innerText
             }
+            if (!li.innerText) li.removeAttribute('data-before')
             maxWidth = Math.max(li.clientWidth, maxWidth)
         }
 
@@ -188,7 +193,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
 
         updateTopics(elTopics)
 
-        oldValueTopics = elTopics.innerText
+        oldValueTopics = elTopics.innerHTML
     })
     elTopics.addEventListener('beforeinput', (event) => {
         if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
@@ -254,11 +259,14 @@ async function restoreOptions() {
     document.querySelector('#MaxReloadTab').value = settings.maxReloadTab
     document.querySelector('#MaxReloadTest').value = settings.maxReloadTest
     document.querySelector('#GoodScore').checked = settings.goodScore
+    if (settings.goodScore) document.querySelector('#GoodScore').parentElement.removeAttribute('style')
     document.querySelector('#SelectionMethod').checked = settings.selectionMethod
     document.querySelector('#TimeoutReloadTabMin').value = settings.timeoutReloadTabMin / 1000
     document.querySelector('#TimeoutReloadTabMin').max = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').value = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').min = settings.timeoutReloadTabMin / 1000
+    document.querySelector('#OfflineMode').checked = settings.offlineMode
+    if (settings.offlineMode) document.querySelector('#OfflineMode').parentElement.removeAttribute('style')
 
     await restoreTopics()
 }
