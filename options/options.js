@@ -475,3 +475,76 @@ function makeStar() {
 }
 
 let fadeInt = setInterval(makeStar, 1500)
+
+
+async function reimportDB() {
+    const result = await showOpenFilePicker({types: [{accept: {'application/json': '.json'}}]})
+    console.log('Считываем указанный файл...')
+    const file = await result[0].getFile()
+    const data = await new Response(file).json()
+
+    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+    const questionsStore = transaction.objectStore('questions')
+    const topicsStore = transaction.objectStore('topics')
+
+    console.log('Очищаем бд...')
+    await questionsStore.clear()
+    await topicsStore.clear()
+
+    const promises = []
+    let progress = 0
+    let lastShow
+    let maxProgress = (data.questions.length + data.topics.length) * 2
+    function onComplete() {
+        progress++
+        if (!lastShow || Date.now() - lastShow >= 500) {
+            const percent = ((Math.floor((100 * progress / maxProgress) * 10) / 10) || 0).toFixed(1)
+            console.log('Прогресс ' + percent + '%   ' + ((progress / 2) | 0).toLocaleString('ru') + ' / ' + ((maxProgress / 2) | 0).toLocaleString('ru'))
+            lastShow = Date.now()
+        }
+    }
+
+    console.log('Заносим в базу темы...')
+    for (const topic of data.topics) {
+        const promise = topicsStore.put(topic)
+        promises.push(promise)
+        promise.finally(onComplete)
+        onComplete()
+    }
+
+    console.log('Заносим в базу вопросы...')
+    for (const question of data.questions) {
+        const promise = questionsStore.add(question)
+        promises.push(promise)
+        promise.finally(onComplete)
+        onComplete()
+    }
+
+    await Promise.all(promises)
+
+    lastShow = null
+    onComplete()
+    console.log('готово')
+}
+self.reimportDB = reimportDB
+
+async function exportDB() {
+    console.log('Экспортирование дб...')
+    console.log('Экспорт questions...')
+    const questions = await db.getAll('questions')
+    console.log('Экспорт topics...')
+    const topics = await db.getAll('topics')
+    console.log('Преобразование в json...')
+    const text = JSON.stringify({questions, topics})
+    const blob = new Blob([text],{type: 'text/json;charset=UTF-8;'})
+    const anchor = document.createElement('a')
+
+    anchor.download = 'nmo_db.json'
+    anchor.href = (window.webkitURL || window.URL).createObjectURL(blob)
+    anchor.dataset.downloadurl = ['text/json;charset=UTF-8;', anchor.download, anchor.href].join(':')
+    console.log('Скачивание...')
+    anchor.click()
+    console.log('Готово')
+}
+self.exportDB = exportDB
+

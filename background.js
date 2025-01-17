@@ -118,6 +118,69 @@ async function init() {
 //     }
 // })
 
+self.resetOptionalVariables = resetOptionalVariables
+async function resetOptionalVariables() {
+    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+
+    for await (const cursor of transaction.objectStore('questions')) {
+        const question = cursor.value
+        let changed
+        if (question.lastOrder) {
+            changed = true
+            delete question.lastOrder
+        }
+        for (const answersHash of Object.keys(question.answers)) {
+            if (question.answers[answersHash].fakeCorrectAnswers) {
+                changed = true
+                delete question.answers[answersHash].fakeCorrectAnswers
+            }
+            if (question.answers[answersHash].tryedAI) {
+                changed = true
+                delete question.answers[answersHash].tryedAI
+            }
+            if (question.answers[answersHash].lastUsedAnswers) {
+                changed = true
+                delete question.answers[answersHash].lastUsedAnswers
+            }
+            if (question.answers[answersHash].combinations) {
+                changed = true
+                delete question.answers[answersHash].combinations
+            }
+        }
+        if (changed) {
+            await cursor.update(question)
+        }
+    }
+
+    for await (const cursor of transaction.objectStore('topics')) {
+        const topic = cursor.value
+        let changed
+        if (topic.inputName) {
+            changed = true
+            delete topic.inputName
+        }
+        if (topic.inputIndex != null) {
+            changed = true
+            delete topic.inputIndex
+        }
+        if (topic.completed != null) {
+            changed = true
+            delete topic.completed
+        }
+        if (topic.needSearchAnswers != null) {
+            changed = true
+            delete topic.needSearchAnswers
+        }
+        if (topic.dirty != null) {
+            changed = true
+            delete topic.dirty
+        }
+        if (changed) {
+            await cursor.update(topic)
+        }
+    }
+}
+
 self.fixDupQuestions = fixDupQuestions
 async function fixDupQuestions() {
     let transaction
