@@ -143,7 +143,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         for (const [index, li] of Array.from(elTopics.children).entries()) {
             li.removeAttribute('style')
             li.removeAttribute('id')
-            li.removeAttribute('data-before')
+            // li.removeAttribute('data-before')
             li.removeAttribute('data-tooltip')
             if (li.firstElementChild?.tagName === 'BR') {
                 li.firstElementChild.remove()
@@ -342,6 +342,8 @@ function updateTopic(topic, element) {
         element.setAttribute('data-before', '✅')
     } else if (topic.completed === 2) {
         element.setAttribute('data-before', '❌')
+    } else {
+        element.removeAttribute('data-before')
     }
     if (topic.error) {
         element.setAttribute('data-tooltip', topic.error)
@@ -440,28 +442,28 @@ function wait(ms) {
 }
 
 /*Звезды на кнопке доната*/
-// let rand = Math.random()
-// let map = document.querySelector('#donate')
-//
-// function makeStar() {
-//     var newstar = document.createElement('div')
-//     newstar.style.backgroundColor = '#fff'
-//     newstar.style.borderRadius = '50%'
-//     newstar.style.position = 'absolute'
-//     newstar.style.top = Math.random()*100 + '%'
-//     newstar.style.left = Math.random()*100 + '%'
-//     newstar.style.height = Math.random()*3 + 'px'
-//     newstar.style.width = newstar.style.height
-//     newstar.classList.add('star')
-//     var glow = Math.random()*10
-//     newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
-//     newstar.style.animationDuration = Math.random()*3+1 + 's'
-//     map.appendChild(newstar)
-//
-//     var stArr = document.querySelectorAll('.star')
-//     if (stArr.length >= 100){
-//         clearInterval(fadeInt)
-//     }
-// }
-//
-// let fadeInt = setInterval(makeStar, 1500)
+let rand = Math.random()
+let map = document.querySelector('#donate')
+
+function makeStar() {
+    let newstar = document.createElement('div')
+    newstar.style.backgroundColor = '#fff'
+    newstar.style.borderRadius = '50%'
+    newstar.style.position = 'absolute'
+    newstar.style.top = Math.random()*100 + '%'
+    newstar.style.left = Math.random()*100 + '%'
+    newstar.style.height = Math.random()*3 + 'px'
+    newstar.style.width = newstar.style.height
+    newstar.classList.add('star')
+    let glow = Math.random()*10
+    newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
+    newstar.style.animationDuration = Math.random()*3+0.5 + 's'
+    map.appendChild(newstar)
+
+    let stArr = document.querySelectorAll('.star')
+    if (stArr.length >= 100){
+        clearInterval(fadeInt)
+    }
+}
+
+let fadeInt = setInterval(makeStar, 1500)

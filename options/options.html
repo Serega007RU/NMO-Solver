@@ -30,9 +30,9 @@
         <a href="https://t.me/nmo_solver" id="telegram" target="_blank">
             <img src="../img/tg.svg" alt="tg">
         </a>
-<!--        <a href="#" id="donate" target="_blank">-->
-<!--            <div class="button">ОТБЛАГОДАРИТЬ АВТОРА</div>-->
-<!--        </a>-->
+        <a href="#" id="donate" target="_blank" style="display: none">
+            <div class="button">ОТБЛАГОДАРИТЬ АВТОРА</div>
+        </a>
         <div class="block" data-block="disabled">
             <div class="description">Расширение никак не будет влиять</div>
         </div>
@@ -84,13 +84,15 @@
                 <div class="label">Решать тест минимум на 5-ку (методом подбора)</div>
             </div>
         </div>
-        <div class="block" data-block="auto" spellcheck="false">
-            <div class="description">Список тем необходимые для прохождения:</div>
-            <button class="import-from-site">
-                <div>Импортировать темы</div>
-                <img src="../img/import.svg" alt="import">
-            </button>
-            <ul class="topics" contenteditable="true">
+        <div class="block" data-block="auto">
+            <div class="description">
+                Список тем необходимые для прохождения:
+                <button class="import-from-site">
+                    <div>Импортировать темы</div>
+                    <img src="../img/import.svg" alt="import">
+                </button>
+            </div>
+            <ul class="topics" contenteditable="true" spellcheck="false">
                 <li></li>
             </ul>
         </div>

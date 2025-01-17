@@ -113,9 +113,9 @@ header {
 	white-space: nowrap;
 }
 
-/*.topics li:nth-child(odd) {
+.topics li:hover {
 	background: #80808059;
-}*/
+}
 
 .topics li {
 	border-bottom: solid 1px #7b7b7b;
@@ -247,7 +247,7 @@ header {
 .import-from-site {
 	display: flex;
 	position: relative;
-	bottom: 39px;
+	bottom: 10px;
 	left: 31px;
 	padding: 3px;
 	font-size: 15px;
@@ -256,6 +256,12 @@ header {
 	outline: none;
 	border: none;
 	border-radius: 3px 10px 3px 10px;
+	transition: .3s;
+}
+
+.import-from-site:hover {
+	cursor: pointer;
+	opacity: 0.8;
 }
 
 .import-from-site div {
