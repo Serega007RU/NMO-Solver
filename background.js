@@ -175,6 +175,10 @@ async function resetOptionalVariables() {
             changed = true
             delete topic.dirty
         }
+        if (topic.error) {
+            changed = true
+            delete topic.error
+        }
         if (changed) {
             await cursor.update(topic)
         }
@@ -656,18 +660,18 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
         await checkErrors(json)
-        if (!json?.elements?.length) {
+        if (!json.elements.length) {
             if (!cut && educationalElement.code) {
                 cut = true
-                searchEducationalElement(educationalElement, cut, inputName)
+                await searchEducationalElement(educationalElement, cut, inputName)
                 return
             } else if (!inputName && educationalElement.inputName) {
                 inputName = true
-                searchEducationalElement(educationalElement, cut, inputName)
+                await searchEducationalElement(educationalElement, cut, inputName)
                 return
             } else {
                 console.log(json)
-                throw TopicError('По заданному названию ничего не найдено')
+                throw new TopicError('По заданному названию ничего не найдено')
             }
         }
         for (const element of json.elements) {
@@ -696,7 +700,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     }
 
     if (!foundEE) {
-        throw TopicError('Не найдено')
+        throw new TopicError('Не найдено')
     }
 
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
@@ -739,7 +743,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
 
     if (foundEE.iomHost?.name) {
         if (!foundEE.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
-            throw TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+            throw new TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
         }
     }
 
@@ -754,7 +758,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
             let json = await response.json()
             await checkErrors(json)
             if (json.globalErrors?.[0]?.code === 'ELEMENT_CANNOT_BE_ADDED_TO_PLAN_EXCEPTION') {
-                throw TopicError(JSON.stringify(json))
+                throw new TopicError(JSON.stringify(json))
             }
         }
         if (settings.clickWaitMax && settings.clickWaitMax > 500) {
@@ -767,7 +771,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
             console.warn('данный элемент уже пройден пользователем', foundEE)
             // TODO мы не можем пропустить открытие теста не смотря на то что оно уже пройдено
             //  так как иногда бывает зависание теста (с пропажей кнопок получения варианта, вперёд и назад)
-            // throw TopicError('Уже пройдено')
+            // throw new TopicError('Уже пройдено')
         }
     }
 
@@ -786,7 +790,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         throw Error('Не была получена ссылка по теме ' + educationalElement.name)
     }
     if (!new URL(json.url).host.includes('edu.rosminzdrav.ru')) {
-        throw TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+        throw new TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
     }
     // tempCabinet = null
     return json.url
@@ -817,14 +821,16 @@ async function checkErrors(json) {
         }
         console.error(json)
         throw Error('НМО выдал ошибку при попытке поиска ' + JSON.stringify(json).slice(0, 150))
-    }/* else if (json.globalErrors?.[0]?.code === 'notFound') {
+    } else if (json.globalErrors?.[0]?.code === 'notFound') {
+        throw new TopicError(JSON.stringify(json.globalErrors))
+    } /* else if (json.globalErrors?.[0]?.code === 'notFound') {
         // TODO кривой костыль если у нас этот ИОМ можно пройти только в другом кабинете (по образованию)
         if (!tempCabinet) {
             tempCabinet = 'nmfo-spo'
             throw Error('notFound')
         } else {
             tempCabinet = null
-            throw TopicError('Не найдено')
+            throw new TopicError('Не найдено')
         }
     }*/
 }

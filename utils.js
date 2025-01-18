@@ -1,6 +1,7 @@
 async function toggleVisibleScript() {
     const scripts = await chrome.scripting.getRegisteredContentScripts({ids: ['visible-script']})
-    if ((settings.mode === 'semi-auto' || settings.mode === 'auto') && settings.answerWaitMax <= 500 && settings.clickWaitMax <= 500) {
+    // TODO следует более адекватно решить проблему с работой в фоновом режиме
+    if ((settings.mode === 'semi-auto' || settings.mode === 'auto')/* && settings.answerWaitMax <= 500 && settings.clickWaitMax <= 500*/) {
         if (!scripts.length) {
             await chrome.scripting.registerContentScripts([{
                 id: 'visible-script',

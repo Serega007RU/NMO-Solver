@@ -208,7 +208,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
 
     elTopics.addEventListener('click', async (event) => {
         console.log(event.target, event.offsetX)
-        if (event.offsetX > 30) return
+        if (event.offsetX > 20) return
         const topic = await db.get('topics', isNaN(event.target.id) ? event.target.id : Number(event.target.id))
         if (!topic) return
         if (topic.completed) {
@@ -219,11 +219,63 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             await db.put('topics', topic)
         }
     })
+
+    document.querySelector('#ImportFromSite').addEventListener('click', async (event) => {
+        const elButton = event.target
+        try {
+            elButton.disabled = true
+            elButton.textContent = 'Импортируем...'
+            const authData = await db.get('other', 'authData')
+            const cabinet = await db.get('other', 'cabinet')
+            if (!authData?.access_token || !cabinet) {
+                throw Error('Ошибка, нет данных об авторизации, зайдите и авторизуйте на портале или обновите страницу портала')
+            }
+            let response = await fetch('https://' + cabinet + '.edu.rosminzdrav.ru/api/api/profile/visibility/cycles', {headers: {authorization: 'Bearer ' + authData.access_token}})
+            let json = await response.json()
+            if (json.error_description?.includes('token expired') || json.error_description?.includes('access token')) {
+                throw Error('Ошибка, данные авторизации устарели, зайдите и авторизуйте на портале или обновите страницу портала')
+            }
+            async function getTopics(id) {
+                for (const type of ['required-elements', 'recommended-elements', 'extra-elements']) {
+                    const url = 'https://' + cabinet + '.edu.rosminzdrav.ru/api/api/profile/my-plan/' + (type !== 'extra-elements' ? 'iot/' : '') + type + (id ? '?cycleId=' + id + '&completed=false' : '?completed=false')
+                    let response = await fetch(url, {headers: {authorization: 'Bearer ' + authData.access_token}})
+                    let json = await response.json()
+                    for (const ee of json) {
+                        if (ee.status !== 'included') continue
+                        const name = ee.name || ee.title || ee.id
+                        if (elTopics.innerText.includes(name)) continue
+                        const li = document.createElement('li')
+                        li.textContent = name
+                        elTopics.append(li)
+                    }
+                }
+            }
+            for (const el of json) {
+                await getTopics(el.cycle.id)
+            }
+            await getTopics()
+            alert('Успешно импортировано')
+        } catch (error) {
+            console.error(error)
+            alert(error)
+        } finally {
+            elButton.disabled = false
+            elButton.textContent = 'Импортировать темы'
+            elTopics.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+    })
 })
 
 chrome.runtime.onMessage.addListener((message) => {
     if (message.updatedTopic) {
-        const li = document.getElementById(message.updatedTopic._id)
+        let li = document.getElementById(message.updatedTopic._id)
+        if (!li && message.updatedTopic.inputIndex != null) {
+            const result = document.querySelector('.topics li:nth-child(' + (message.updatedTopic.inputIndex + 1) + ')')
+            if (result && result.innerText.trim() === message.updatedTopic.inputName) {
+                li = result
+                li.id = message.updatedTopic._id
+            }
+        }
         if (li) {
             updateTopic(message.updatedTopic, li)
         }
@@ -360,7 +412,22 @@ function updateTopic(topic, element) {
     }
 }
 
-async function updateTopics(elTopics) {
+let topicsTimer
+let topicsFunc
+async function updateTopics(elTopics, skipTimer) {
+    // подобным образом мы хоть как-то оптимизируем обновление списка
+    if (!skipTimer) {
+        clearTimeout(topicsTimer)
+        topicsTimer = setTimeout(() => {
+            topicsFunc = updateTopics(elTopics, true)
+            topicsFunc.finally(() => topicsFunc.done = true)
+        }, 1000)
+        return
+    }
+    if (topicsFunc && !topicsFunc.done) {
+        updateTopics(elTopics)
+    }
+
     const topicsStore = db.transaction('topics', 'readwrite').store
 
     const dirty = topicsStore.index('dirty')
@@ -430,7 +497,7 @@ async function updateTopics(elTopics) {
                 topic.name = object.name
             }
             updateTopic(topic, li)
-            console.log('Обновлён', topic)
+            // console.log('Обновлён', topic)
         } else {
             topic = object
             topic.completed = 0
@@ -438,7 +505,7 @@ async function updateTopics(elTopics) {
             topic.inputName = text
             topic.dirty = 1
             updateTopic(topic, li)
-            console.log('Добавлен', topic)
+            // console.log('Добавлен', topic)
         }
         const key = await topicsStore.put(topic)
         li.id = key
@@ -450,11 +517,9 @@ function wait(ms) {
 }
 
 /*Звезды на кнопке доната*/
-let rand = Math.random()
-let map = document.querySelector('#donate')
-
+// const fadeInt = setInterval(makeStar, 1500)
 function makeStar() {
-    let newstar = document.createElement('div')
+    const newstar = document.createElement('div')
     newstar.style.backgroundColor = '#fff'
     newstar.style.borderRadius = '50%'
     newstar.style.position = 'absolute'
@@ -463,18 +528,16 @@ function makeStar() {
     newstar.style.height = Math.random()*3 + 'px'
     newstar.style.width = newstar.style.height
     newstar.classList.add('star')
-    let glow = Math.random()*10
+    const glow = Math.random()*10
     newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
     newstar.style.animationDuration = Math.random()*3+0.5 + 's'
-    map.appendChild(newstar)
+    document.querySelector('#donate').appendChild(newstar)
 
-    let stArr = document.querySelectorAll('.star')
-    if (stArr.length >= 100){
+    const stArr = document.querySelectorAll('.star')
+    if (stArr.length >= 100) {
         clearInterval(fadeInt)
     }
 }
-
-let fadeInt = setInterval(makeStar, 1500)
 
 
 async function reimportDB() {
