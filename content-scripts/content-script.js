@@ -77,6 +77,11 @@ async function portListener(message) {
 
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
     if (!settings.goodScore && topic.includes(' - Предварительное тестирование')) {
+        if (document.querySelector('.expansion-panel-custom_toggle-title')?.textContent === 'Развернуть') {
+            await simulateClick(document.querySelector('.expansion-panel-custom_toggle-title'))
+            await wait(500)
+            await randomWait()
+        }
         // сразу нажимаем "Завершить тестирование"
         await simulateClick(document.querySelector('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])'))
         await randomWait()
