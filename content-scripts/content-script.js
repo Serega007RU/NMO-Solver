@@ -6,7 +6,7 @@ let countAnsweredAnswers = 0
 let rejectWait
 let running
 
-let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, sentResults
+let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, cachedError, sentResults
 
 let settings
 let lastScore
@@ -61,6 +61,7 @@ async function portListener(message) {
                 cachedQuestion = message.question
                 cachedCorrect = message.correct
                 cachedAnswerHash = message.answerHash
+                cachedError = message.error
                 if (document.querySelector('.question-inner-html-text')) {
                     highlightAnswers()
                 }
@@ -503,6 +504,9 @@ function sendQuestion() {
     }
     if (statusBody) {
         cachedAnswers = null
+        cachedError = null
+        cachedCorrect = null
+        cachedAnswerHash = null
         cachedQuestion = question
         statusBody.textContent = 'Обращение к серверу с ответами...'
     }
@@ -887,7 +891,13 @@ function highlightAnswers(remove) {
     if (cachedCorrect) {
         statusBody.innerText = 'Подсвечены правильные ответы'
     } else {
-        statusBody.innerText = 'В базе нет ответов на данный вопрос\nПодсвечены предполагаемые ответы\n(методом подбора)\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+        statusBody.innerText = 'В локальной базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+    }
+    if (cachedError) {
+        const error = document.createElement('div')
+        error.style.color = 'red'
+        error.innerText = cachedError
+        statusBody.prepend(error)
     }
 }
 
@@ -913,9 +923,11 @@ function listenQuestions() {
             if (document.querySelector('.question-inner-html-text')) {
                 highlightAnswers()
             } else if (cachedQuestion) {
-                cachedQuestion = null
                 cachedAnswers = null
+                cachedQuestion = null
                 cachedCorrect = null
+                cachedAnswerHash = null
+                cachedError = null
                 highlightAnswers(true)
             }
             if (document.querySelector('.questionList')) {

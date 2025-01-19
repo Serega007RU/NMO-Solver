@@ -618,7 +618,8 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         console.log('ищем', educationalElement)
         if (educationalElement.dirty && educationalElement.name) {
             // TODO следует учесть элементы без name (если задан чисто id)
-            educationalElement = await getAnswersByTopicFromServer(educationalElement.name, educationalElement)
+            const result = await getAnswersByTopicFromServer(educationalElement.name, educationalElement)
+            educationalElement = result.topic
         }
     }
 
@@ -847,20 +848,24 @@ chrome.runtime.onConnect.addListener((port) => {
         await initializeFunc
         setReloadTabTimer()
         if (message.question) {
+            let error
             lastScore = null
             let searchedOnServer
             let topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
             if (!topic || topic.dirty) {
                 searchedOnServer = true
-                topic = await getAnswersByTopicFromServer(message.question.topics[0], topic)
+                const result = await getAnswersByTopicFromServer(message.question.topics[0], topic)
+                topic = result.topic
+                error = result.error
             }
             let key = await db.getKeyFromIndex('questions', 'question', message.question.question)
             if (!key) {
                 searchedOnServer = true
                 const result = await getAnswersByQuestionFromServer(message.question.question)
-                if (result) {
-                    key = result._id
+                if (result?.question) {
+                    key = result.question._id
                 }
+                error = result?.error
             }
             // работа с найденным вопросом
             if (key) {
@@ -868,10 +873,11 @@ chrome.runtime.onConnect.addListener((port) => {
                 const answerHash = objectHash(message.question.answers.answers)
                 if (!searchedOnServer && !question.answers[answerHash]) {
                     const result = await getAnswersByQuestionFromServer(message.question.question)
-                    if (result) {
-                        key = result._id
-                        question = result
+                    if (result?.question) {
+                        key = result.question._id
+                        question = result.question
                     }
+                    error = result?.error
                 }
                 // добавление другого варианта ответов (в одном вопросе может быть несколько вариаций ответов с разными ответами)
                 if (!question.answers[answerHash]) {
@@ -909,7 +915,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         console.log('добавлены новые варианты ответов', question)
                     }
                     question.answers[answerHash].lastUsedAnswers = answers
-                    port?.postMessage({answers, question, answerHash})
+                    port?.postMessage({answers, question, answerHash, error})
                 // если найден и вопрос и к нему вариант ответов
                 } else {
                     if (!question.lastOrder) question.lastOrder = {}
@@ -919,10 +925,11 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
                         const result = await getAnswersByQuestionFromServer(message.question.question)
-                        if (result) {
-                            key = result._id
-                            question = result
+                        if (result?.question) {
+                            key = result.question._id
+                            question = result.question
                         }
+                        error = result?.error
                     }
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
@@ -971,7 +978,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                         }
                         question.answers[answerHash].lastUsedAnswers = answers
-                        port?.postMessage({answers, question, answerHash})
+                        port?.postMessage({answers, question, answerHash, error})
                     }
                 }
                 if (!question.topics.includes(topic._id)) {
@@ -992,7 +999,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.topics = [topic._id]
                 console.log('добавлен новый вопрос', question)
                 question.answers[answerHash].lastUsedAnswers = answers
-                port?.postMessage({answers, question, answerHash})
+                port?.postMessage({answers, question, answerHash, error})
                 await db.put('questions', question)
             }
         // сохранение результатов теста с правильными и не правильными ответами
@@ -1001,7 +1008,8 @@ chrome.runtime.onConnect.addListener((port) => {
 
             let topic = await db.getFromIndex('topics', 'name', message.topic)
             if (!topic || topic.dirty) {
-                topic = await getAnswersByTopicFromServer(message.topic, topic)
+                const result = await getAnswersByTopicFromServer(message.topic, topic)
+                topic = result.topic
             }
             lastScore = message.lastScore
 
@@ -1009,8 +1017,8 @@ chrome.runtime.onConnect.addListener((port) => {
                 let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
                 if (!key) {
                     const result = await getAnswersByQuestionFromServer(resultQuestion.question)
-                    if (result) {
-                        key = result._id
+                    if (result?.question) {
+                        key = result.question._id
                     }
                 }
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
@@ -1315,21 +1323,33 @@ function getCombinations(items, multi) {
 async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/getQuestionByName', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: question})})
+        const response = await fetch('https://serega007.ru/getQuestionByName', {
+            headers: {'Content-Type': 'application/json'},
+            method: 'POST',
+            body: JSON.stringify({name: question}),
+            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+        })
         const json = await response.json()
         if (json) {
-            return joinQuestion(json)
+            const question = await joinQuestion(json)
+            return {question}
         }
-    } catch (error) {
-        console.error(error)
+    } catch (e) {
+        console.error(e)
+        return {error: 'Не удалось связаться с сервером ответов'}
     }
 }
 
 async function getAnswersByTopicFromServer(topicName, oldTopic) {
-    let topic
+    let topic, error
     try {
         if (!settings.offlineMode) {
-            const response = await fetch('https://serega007.ru/getQuestionsByTopic', {headers: {'Content-Type': 'application/json'}, method: 'POST', body: JSON.stringify({name: topicName})})
+            const response = await fetch('https://serega007.ru/getQuestionsByTopic', {
+                headers: {'Content-Type': 'application/json'},
+                method: 'POST',
+                body: JSON.stringify({name: topicName}),
+                signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+            })
             const json = await response.json()
             if (json) {
                 if (oldTopic) {
@@ -1344,17 +1364,18 @@ async function getAnswersByTopicFromServer(topicName, oldTopic) {
                 }
             }
         }
-    } catch (error) {
-        console.error(error)
+    } catch (e) {
+        error = 'Не удалось связаться с сервером ответов'
+        console.error(e)
     }
-    if (topic) return topic
+    if (topic) return {topic, error}
     if (!oldTopic) {
         const topic = {name: topicName}
         topic._id = await db.put('topics', topic)
         console.log('Внесена новая тема в базу', topicName)
-        return topic
+        return {topic, error}
     } else {
-        return oldTopic
+        return {oldTopic, error}
     }
 }
 
