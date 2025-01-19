@@ -38,6 +38,6 @@
 		"128": "img/icon128.png"
 	},
 	"update_url": "https://clients2.google.com/service/update2/crx",
-	"version": "2.2.2",
+	"version": "2.3.0",
 	"minimum_chrome_version": "105.0"
 }
