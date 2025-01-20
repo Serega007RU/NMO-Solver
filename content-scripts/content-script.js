@@ -233,6 +233,12 @@ async function start(collectAnswers) {
 
     startRepeat++
     if (startRepeat > settings.maxAttemptsNext) {
+        const back = document.querySelector('.v-button-blue-button.v-button-icon-align-right')?.parentElement?.firstElementChild
+        if (back?.textContent?.includes('Назад')) {
+            // TODO тупой костыль исправляющий проблему бесконечного прожатия вперёд если кнопка "Получить новый вариант" не активна но она обязательная для нажатия
+            await simulateClick(back)
+            await wait(500)
+        }
         chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток запуска теста или перейти на следующий этап'})
         return
     }
