@@ -1370,12 +1370,12 @@ async function getAnswersByTopicFromServer(topicName, oldTopic) {
     }
     if (topic) return {topic, error}
     if (!oldTopic) {
-        const topic = {name: topicName}
+        topic = {name: topicName}
         topic._id = await db.put('topics', topic)
         console.log('Внесена новая тема в базу', topicName)
         return {topic, error}
     } else {
-        return {oldTopic, error}
+        return {topic: oldTopic, error}
     }
 }
 
