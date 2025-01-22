@@ -24,8 +24,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             const mode = el.getAttribute('data-block')
 
             blocks.forEach((block) => {
-                const dataBlock = block.getAttribute('data-block')
-                if (dataBlock === el.getAttribute('data-block') || (dataBlock === 'semi-auto' && 'auto' === el.getAttribute('data-block'))) {
+                if (block.getAttribute('data-block').split(' ').includes(el.getAttribute('data-block'))) {
                     block.classList.add('active')
                 } else {
                     block.classList.remove('active')
@@ -222,6 +221,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
 
     document.querySelector('#ImportFromSite').addEventListener('click', async (event) => {
         const elButton = event.target
+        if (elButton.disabled) return
         try {
             elButton.disabled = true
             elButton.textContent = 'Импортируем...'
@@ -287,8 +287,7 @@ async function restoreOptions() {
     const blocks = document.querySelectorAll('div.block')
     blocks.forEach((block) => {
         block.classList.remove('active')
-        const dataBlock = block.getAttribute('data-block')
-        if (dataBlock === settings.mode || (dataBlock === 'semi-auto' && 'auto' === settings.mode)) {
+        if (block.getAttribute('data-block').split(' ').includes(settings.mode)) {
             block.classList.add('active')
         } else {
             block.classList.remove('active')
@@ -318,7 +317,10 @@ async function restoreOptions() {
     document.querySelector('#TimeoutReloadTabMax').value = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').min = settings.timeoutReloadTabMin / 1000
     document.querySelector('#OfflineMode').checked = settings.offlineMode
-    if (settings.offlineMode) document.querySelector('#OfflineMode').parentElement.removeAttribute('style')
+    if (settings.offlineMode) {
+        document.querySelector('#OfflineMode').parentElement.removeAttribute('style')
+        document.querySelector('#OfflineMode').parentElement.parentElement.removeAttribute('style')
+    }
 
     await restoreTopics()
 }

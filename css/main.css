@@ -339,6 +339,10 @@ main .block {
 	margin-top: 15px !important;
 }
 
+.block[data-block="manual semi-auto auto"] {
+	margin-top: -10px !important;
+}
+
 main .block.active {
 	display: block;
 }
