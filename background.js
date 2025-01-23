@@ -1309,7 +1309,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 console.error(error)
             }
         }
-        waitUntilState(false)
+        if (!runningTab) waitUntilState(false)
         port = null
     })
 
@@ -1487,7 +1487,7 @@ function stop(resetAction=true) {
 
 // тупорылый костыль (официально одобренный самим гуглом) на то что б Service Worker не отключался во время выполнения кода
 async function waitUntil(promise) {
-    const keepAlive = setInterval(chrome.runtime.getPlatformInfo, 10 * 1000)
+    const keepAlive = setInterval(chrome.runtime.getPlatformInfo, 15 * 1000)
     try {
         await promise
     } finally {
@@ -1498,7 +1498,7 @@ let timerKeepAlive
 function waitUntilState(state) {
     if (state) {
         if (!timerKeepAlive) {
-            timerKeepAlive = setInterval(chrome.runtime.getPlatformInfo, 10 * 1000)
+            timerKeepAlive = setInterval(chrome.runtime.getPlatformInfo, 15 * 1000)
         }
     } else {
         clearInterval(timerKeepAlive)
