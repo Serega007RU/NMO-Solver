@@ -1,6 +1,8 @@
 import * as idb from '/libs/idb.js'
 self.idb = idb
 
+document.querySelector('#version').textContent = 'Версия ' + chrome.runtime.getManifest().version
+
 let db, settings
 async function init() {
     db = await idb.openDB('nmo', 16)

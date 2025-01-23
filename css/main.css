@@ -165,6 +165,12 @@ header {
 	text-indent: 30px;
 }
 
+#version {
+	position: fixed;
+	right: 75px;
+	bottom: 10px;
+}
+
 #telegram {
 	position: fixed;
 	right: 10px;
