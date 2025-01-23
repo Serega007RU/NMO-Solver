@@ -1,7 +1,7 @@
 import * as idb from '/libs/idb.js'
 self.idb = idb
 
-let db, settings, resolveInit
+let db, settings
 async function init() {
     db = await idb.openDB('nmo', 16)
     self.db = db
@@ -206,7 +206,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     elTopics.style.setProperty('--width', maxWidth + 'px')
 
     elTopics.addEventListener('click', async (event) => {
-        console.log(event.target, event.offsetX)
+        // console.log(event.target, event.offsetX)
         if (event.offsetX > 20) return
         const topic = await db.get('topics', isNaN(event.target.id) ? event.target.id : Number(event.target.id))
         if (!topic) return
@@ -230,30 +230,27 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             if (!authData?.access_token || !cabinet) {
                 throw Error('Ошибка, нет данных об авторизации, зайдите и авторизуйте на портале или обновите страницу портала')
             }
-            let response = await fetch('https://' + cabinet + '.edu.rosminzdrav.ru/api/api/profile/visibility/cycles', {headers: {authorization: 'Bearer ' + authData.access_token}})
-            let json = await response.json()
-            if (json.error_description?.includes('token expired') || json.error_description?.includes('access token')) {
-                throw Error('Ошибка, данные авторизации устарели, зайдите и авторизуйте на портале или обновите страницу портала')
-            }
-            async function getTopics(id) {
-                for (const type of ['required-elements', 'recommended-elements', 'extra-elements']) {
-                    const url = 'https://' + cabinet + '.edu.rosminzdrav.ru/api/api/profile/my-plan/' + (type !== 'extra-elements' ? 'iot/' : '') + type + (id ? '?cycleId=' + id + '&completed=false' : '?completed=false')
-                    let response = await fetch(url, {headers: {authorization: 'Bearer ' + authData.access_token}})
-                    let json = await response.json()
-                    for (const ee of json) {
-                        if (ee.status !== 'included') continue
-                        const name = ee.name || ee.title || ee.id
-                        if (elTopics.innerText.includes(name)) continue
-                        const li = document.createElement('li')
-                        li.textContent = name
-                        elTopics.append(li)
-                    }
+            for (let i=2; i--;) {
+                let response = await fetch('https://' + cabinet + '.edu.rosminzdrav.ru/api/api/profile/schedule/load-iom?offset=0&hasGap=' + (i === 1 ? 'true' : 'false'), {headers: {authorization: 'Bearer ' + authData.access_token}})
+                if (String(response.status).startsWith('5')) {
+                    throw Error('Ошибка, портал не может ответить на запрос, код ошибки ' + String(response.status) + ' ' + response.statusText)
+                }
+                let json = await response.json()
+                if (json.error_description?.includes('token expired') || json.error_description?.includes('access token')) {
+                    throw Error('Ошибка, данные авторизации устарели, зайдите и авторизуйте на портале или обновите страницу портала')
+                }
+                const topicsStore = db.transaction('topics', 'readwrite').store
+                for (const ee of json) {
+                    if (ee.status !== 'included') continue
+                    const name = ee.elementName || ee.elementTitle || ee.elementId
+                    if (elTopics.innerText.includes(name)) continue
+                    const object = {id: ee.elementId, name: normalizeText(ee.elementName || ee.elementTitle), dirty: 1}
+                    await putNewTopic(object, topicsStore)
+                    const li = document.createElement('li')
+                    li.textContent = name
+                    elTopics.append(li)
                 }
             }
-            for (const el of json) {
-                await getTopics(el.cycle.id)
-            }
-            await getTopics()
             alert('Успешно импортировано')
         } catch (error) {
             console.error(error)
@@ -458,10 +455,12 @@ async function updateTopics(elTopics, skipTimer) {
         await cursor.update(topic)
     }
 
-    for (const [index, li] of Array.from(elTopics.children).entries()) {
+    let index = 0
+    for (const li of elTopics.children) {
         const text = li.innerText.trim()
         if (!text) continue
 
+        index++
         const ee = text.split(/\t/)
         const object = {}
         if (ee.length === 1 && ee[0].trim()) {

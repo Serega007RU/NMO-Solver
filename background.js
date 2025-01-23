@@ -618,8 +618,10 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         console.log('ищем', educationalElement)
         if (educationalElement.dirty && educationalElement.name) {
             // TODO следует учесть элементы без name (если задан чисто id)
-            const result = await getAnswersByTopicFromServer(educationalElement.name, educationalElement)
-            educationalElement = result.topic
+            const result = await getAnswersByTopicFromServer(educationalElement.name)
+            if (result.topic) {
+                educationalElement = result.topic
+            }
         }
     }
 
@@ -636,9 +638,16 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
+        if (json.globalErrors?.[0]?.code === 'notFound') {
+            // TODO у нас проблема с id, в разных кабинетах разные id тем с одинаковым названием
+            delete educationalElement.id
+            await db.put('topics', educationalElement)
+            await searchEducationalElement(educationalElement, cut, inputName)
+            return
+        }
         await checkErrors(json)
         foundEE = json
-    } else {
+    } else if (searchQuery) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/search`, {
             headers: {authorization: 'Bearer ' + authData.access_token, 'content-type': 'application/json'},
             body: JSON.stringify({
@@ -698,6 +707,8 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
                 break
             }
         }
+    } else {
+        throw new TopicError('Нет параметров для поиска (ошибка с id или не найдено по id)')
     }
 
     if (!foundEE) {
@@ -854,9 +865,15 @@ chrome.runtime.onConnect.addListener((port) => {
             let topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
             if (!topic || topic.dirty) {
                 searchedOnServer = true
-                const result = await getAnswersByTopicFromServer(message.question.topics[0], topic)
-                topic = result.topic
+                const result = await getAnswersByTopicFromServer(message.question.topics[0])
                 error = result.error
+                if (result.topic) {
+                    topic = result.topic
+                } else if (!topic && !result.topic) {
+                    topic = {name: message.question.topics[0]}
+                    topic._id = await db.put('topics', topic)
+                    console.log('Внесена новая тема в базу', message.question.topics[0])
+                }
             }
             let key = await db.getKeyFromIndex('questions', 'question', message.question.question)
             if (!key) {
@@ -1008,8 +1025,14 @@ chrome.runtime.onConnect.addListener((port) => {
 
             let topic = await db.getFromIndex('topics', 'name', message.topic)
             if (!topic || topic.dirty) {
-                const result = await getAnswersByTopicFromServer(message.topic, topic)
-                topic = result.topic
+                const result = await getAnswersByTopicFromServer(message.topic)
+                if (result.topic) {
+                    topic = result.topic
+                } else if (!topic && !result.topic) {
+                    topic = {name: message.question.topics[0]}
+                    topic._id = await db.put('topics', topic)
+                    console.log('Внесена новая тема в базу', message.question.topics[0])
+                }
             }
             lastScore = message.lastScore
 
@@ -1340,7 +1363,7 @@ async function getAnswersByQuestionFromServer(question) {
     }
 }
 
-async function getAnswersByTopicFromServer(topicName, oldTopic) {
+async function getAnswersByTopicFromServer(topicName) {
     let topic, error
     try {
         if (!settings.offlineMode) {
@@ -1352,13 +1375,7 @@ async function getAnswersByTopicFromServer(topicName, oldTopic) {
             })
             const json = await response.json()
             if (json) {
-                if (oldTopic) {
-                    topic = await joinTopics(oldTopic, json.topic)
-                } else {
-                    topic = json.topic
-                    await db.put('topics', json.topic)
-                    console.log('Внесена новая тема в базу', json.topic)
-                }
+                topic = await putNewTopic(json.topic)
                 for (const question of json.questions) {
                     await joinQuestion(question)
                 }
@@ -1368,15 +1385,7 @@ async function getAnswersByTopicFromServer(topicName, oldTopic) {
         error = 'Не удалось связаться с сервером ответов'
         console.error(e)
     }
-    if (topic) return {topic, error}
-    if (!oldTopic) {
-        topic = {name: topicName}
-        topic._id = await db.put('topics', topic)
-        console.log('Внесена новая тема в базу', topicName)
-        return {topic, error}
-    } else {
-        return {topic: oldTopic, error}
-    }
+    return {topic, error}
 }
 
 async function joinQuestion(newQuestion) {
@@ -1422,77 +1431,6 @@ async function joinQuestion(newQuestion) {
         console.log('С интернета обновлён вопрос', question)
         return question
     }
-}
-
-async function joinTopics(oldTopic, newTopic) {
-    delete oldTopic.dirty
-    delete newTopic.dirty
-    let changed
-    const topicsStore = db.transaction('topics', 'readwrite').store
-    if (oldTopic.id !== newTopic.id) {
-        changed = true
-        const newNewTopic = await topicsStore.index('id').get(newTopic.id)
-        if (newNewTopic) {
-            console.warn('Обнаружено тройное задвоение тем, исправляем')
-            oldTopic = joinTopic(oldTopic, newNewTopic)
-            await topicsStore.delete(newNewTopic._id)
-        }
-        oldTopic.id = newTopic.id
-    }
-    if (oldTopic.code !== newTopic.code) {
-        changed = true
-        const newNewTopic = await topicsStore.index('code').get(newTopic.code)
-        if (newNewTopic) {
-            console.warn('Обнаружено тройное задвоение тем, исправляем')
-            oldTopic = joinTopic(oldTopic, newNewTopic)
-            await topicsStore.delete(newNewTopic._id)
-        }
-        oldTopic.code = newTopic.code
-    }
-    if (oldTopic.name !== newTopic.name) {
-        changed = true
-        const newNewTopic = await topicsStore.index('name').get(newTopic.name)
-        if (newNewTopic) {
-            console.warn('Обнаружено тройное задвоение тем, исправляем')
-            oldTopic = joinTopic(oldTopic, newNewTopic)
-            await topicsStore.delete(newNewTopic._id)
-        }
-        oldTopic.name = newTopic.name
-    }
-    if (!oldTopic.inputName && newTopic.inputName) {
-        changed = true
-        oldTopic.inputName = newTopic.inputName
-    }
-    if (oldTopic.inputIndex == null && newTopic.inputIndex != null) {
-        changed = true
-        oldTopic.inputIndex = newTopic.inputIndex
-    }
-    if (changed) {
-        console.warn('Обнаружено задвоение тем, исправляем')
-        await topicsStore.put(oldTopic)
-    }
-    return oldTopic
-}
-
-function joinTopic(oldTopic, newTopic) {
-    delete oldTopic.dirty
-    delete newTopic.dirty
-    if (!oldTopic.id && newTopic.id) {
-        oldTopic.id = newTopic.id
-    }
-    if (!oldTopic.code && newTopic.code) {
-        oldTopic.code = newTopic.code
-    }
-    if (!oldTopic.name && newTopic.name) {
-        oldTopic.name = newTopic.name
-    }
-    if (!oldTopic.inputName && newTopic.inputName) {
-        oldTopic.inputName = newTopic.inputName
-    }
-    if (oldTopic.inputIndex == null && newTopic.inputIndex != null) {
-        oldTopic.inputIndex = newTopic.inputIndex
-    }
-    return oldTopic
 }
 
 function showNotification(title, message) {

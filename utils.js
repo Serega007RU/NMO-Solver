@@ -66,3 +66,102 @@ async function toggleRuleSet() {
     }
 }
 self.toggleRuleSet = toggleRuleSet
+
+async function putNewTopic(newTopic, topicsStore) {
+    delete newTopic.dirty
+    if (!topicsStore) topicsStore = db.transaction('topics', 'readwrite').store
+    let topic, changed
+    if (newTopic.id) {
+        topic = await topicsStore.index('id').get(newTopic.id)
+    }
+    if (!topic && newTopic.code) {
+        topic = await topicsStore.index('code').get(newTopic.code)
+    }
+    if (!topic && newTopic.name) {
+        topic = await topicsStore.index('name').get(newTopic.name)
+    }
+    if (!topic) {
+        newTopic._id = await topicsStore.put(newTopic)
+        return newTopic
+    }
+    if (newTopic.id && topic.id !== newTopic.id) {
+        changed = true
+        topic.id = newTopic.id
+        const oldTopic = await topicsStore.index('id').get(topic.id)
+        if (oldTopic._id !== topic._id) {
+            topic = joinTopics(topic, oldTopic)
+            await topicsStore.delete(oldTopic._id)
+            console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
+        }
+    }
+    if (newTopic.code && topic.code !== newTopic.code) {
+        changed = true
+        topic.code = newTopic.code
+        const oldTopic = await topicsStore.index('code').get(topic.code)
+        if (oldTopic._id !== topic._id) {
+            topic = joinTopics(topic, oldTopic)
+            await topicsStore.delete(oldTopic._id)
+            console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
+        }
+    }
+    if (newTopic.name && topic.name !== newTopic.name) {
+        changed = true
+        topic.name = newTopic.name
+        const oldTopic = await topicsStore.index('name').get(topic.name)
+        if (oldTopic._id !== topic._id) {
+            topic = joinTopics(topic, oldTopic)
+            await topicsStore.delete(oldTopic._id)
+            console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
+        }
+    }
+    if (newTopic.inputName && topic.inputName !== newTopic.inputName) {
+        changed = true
+        topic.inputName = newTopic.inputName
+    }
+    if (newTopic.inputIndex != null && topic.inputIndex !== newTopic.inputIndex) {
+        changed = true
+        topic.inputIndex = newTopic.inputIndex
+    }
+    if (newTopic.completed != null && topic.completed !== newTopic.completed) {
+        changed = true
+        topic.completed = newTopic.completed
+    }
+    if (newTopic.error != null && topic.error !== newTopic.error) {
+        changed = true
+        topic.error = newTopic.error
+    }
+    if (changed) {
+        console.log('Объединён topic', topic)
+        await topicsStore.put(topic)
+    }
+    return topic
+}
+self.putNewTopic = putNewTopic
+
+function joinTopics(oldTopic, newTopic) {
+    delete oldTopic.dirty
+    delete newTopic.dirty
+    if (!oldTopic.id && newTopic.id) {
+        oldTopic.id = newTopic.id
+    }
+    if (!oldTopic.code && newTopic.code) {
+        oldTopic.code = newTopic.code
+    }
+    if (!oldTopic.name && newTopic.name) {
+        oldTopic.name = newTopic.name
+    }
+    if (!oldTopic.inputName && newTopic.inputName) {
+        oldTopic.inputName = newTopic.inputName
+    }
+    if (oldTopic.inputIndex == null && newTopic.inputIndex != null) {
+        oldTopic.inputIndex = newTopic.inputIndex
+    }
+    if (oldTopic.completed == null && newTopic.completed != null) {
+        oldTopic.completed = newTopic.completed
+    }
+    if (oldTopic.error == null && newTopic.error != null) {
+        oldTopic.error = newTopic.error
+    }
+    return oldTopic
+}
+self.joinTopics = joinTopics
