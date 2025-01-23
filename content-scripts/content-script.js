@@ -11,7 +11,12 @@ let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, cachedError,
 let settings
 let lastScore
 
-let shadowRoot, highLightDiv, statusDiv, statusBody, observerAll, observerResize
+let shadowRoot, observerAll, observerResize
+const highLightDiv = document.createElement('div')
+const autoDiv = document.createElement('div')
+const errorDiv = document.createElement('div')
+errorDiv.style.color = 'red'
+const statusDiv = document.createElement('div')
 
 
 function osReceiveStatus(message) {
@@ -23,9 +28,7 @@ function osReceiveStatus(message) {
         running = true
         start(message.collectAnswers)
     }
-    if (message.settings) {
-        listenQuestions()
-    }
+    listenQuestions()
 }
 chrome.runtime.sendMessage({
     status: true,
@@ -54,23 +57,19 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 })
 
 async function portListener(message) {
-    if (settings.mode === 'manual') {
-        if (statusBody && !running) {
-            if (message.answers && (!cachedQuestion || cachedQuestion.question === message.question.question)) {
-                cachedAnswers = message.answers
-                cachedQuestion = message.question
-                cachedCorrect = message.correct
-                cachedAnswerHash = message.answerHash
-                cachedError = message.error
-                if (document.querySelector('.question-inner-html-text')) {
-                    highlightAnswers()
-                }
-            } else if (message.stats) {
-                statusBody.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
-            }
+    if (message.answers && (!cachedQuestion || cachedQuestion.question === message.question.question)) {
+        cachedAnswers = message.answers
+        cachedQuestion = message.question
+        cachedCorrect = message.correct
+        cachedAnswerHash = message.answerHash
+        cachedError = message.error
+        if (document.querySelector('.question-inner-html-text')) {
+            highlightAnswers()
         }
-        return
+    } else if (message.stats) {
+        statusDiv.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
     }
+    if (settings.mode === 'manual' || !running) return
 
     // ждём когда прогрузится кнопка следующий вопрос или завершить тест
     await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"])')
@@ -93,7 +92,10 @@ async function portListener(message) {
         return
     }
 
-    await randomWait()
+    // тут мы типо думаем над вопросом, от 3 до 30 секунд
+    if (settings.answerWaitMax && (!topic.includes(' - Предварительное тестирование') || settings.goodScore)) {
+        await wait(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin, true)
+    }
 
     // для начала проверяем случайно не отвечали ли уже на этот вопрос (на случай если страница обновлялась)
     let checkedElement = document.querySelector('input[type="checkbox"]:checked')
@@ -142,20 +144,20 @@ async function portListener(message) {
         }
     }
 
-    let hasChecked = false
-    for (const el of document.querySelectorAll('.mdc-checkbox__native-control')) {
-        if (el?.checked) {
-            hasChecked = true
-        }
-    }
-    for (const el of document.querySelectorAll('.mdc-radio__native-control')) {
-        if (el?.checked) {
-            hasChecked = true
-        }
-    }
-    if (!hasChecked) {
-        debugger
-    }
+    // let hasChecked = false
+    // for (const el of document.querySelectorAll('.mdc-checkbox__native-control')) {
+    //     if (el?.checked) {
+    //         hasChecked = true
+    //     }
+    // }
+    // for (const el of document.querySelectorAll('.mdc-radio__native-control')) {
+    //     if (el?.checked) {
+    //         hasChecked = true
+    //     }
+    // }
+    // if (!hasChecked) {
+    //     debugger
+    // }
 
     await nextQuestion()
 
@@ -163,6 +165,7 @@ async function portListener(message) {
 }
 
 async function nextQuestion() {
+    highlightAnswers(true)
     // если мы видим кнопку завершения теста
     const nextQuestionButton = document.querySelector('.mat-card-actions-container .mat-primary:not([disabled="true"],[style="display: none;"])')
     if (nextQuestionButton) {
@@ -476,7 +479,7 @@ async function runTest() {
 
     // console.log(document.querySelector('.question-title-text')?.textContent?.trim())
 
-    const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
+    // const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
     
     // сбор правильных и не правильных ответов
     if (document.querySelector('.questionList')) {
@@ -488,11 +491,6 @@ async function runTest() {
             stop()
         }
         return
-    }
-
-    // тут мы типо думаем над вопросом, от 3 до 30 секунд
-    if (settings.answerWaitMax && !topic.includes(' - Предварительное тестирование')) {
-        await wait(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin)
     }
 
     sendQuestion()
@@ -513,14 +511,12 @@ function sendQuestion() {
         topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
-    if (statusBody) {
-        cachedAnswers = null
-        cachedError = null
-        cachedCorrect = null
-        cachedAnswerHash = null
-        cachedQuestion = question
-        statusBody.textContent = 'Обращение к серверу с ответами...'
-    }
+    cachedAnswers = null
+    cachedError = null
+    cachedCorrect = null
+    cachedAnswerHash = null
+    cachedQuestion = question
+    statusDiv.textContent = 'Обращение к базе данных с ответами...'
     port.postMessage({question})
 }
 
@@ -532,7 +528,9 @@ function sendResults() {
     }
     if (sentResults) return
     sentResults = true
-    if (statusBody) statusBody.textContent = 'Подождите, мы сохраняем результаты теста...'
+    autoDiv.replaceChildren()
+    errorDiv.replaceChildren()
+    statusDiv.textContent = 'Сохранение результатов теста...'
     const correctAnswersElements = document.querySelectorAll('.questionList-item')
     const sendObject = {}
     const results = []
@@ -833,14 +831,31 @@ async function randomWait() {
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 }
 
-function wait(ms) {
+function wait(ms, question) {
+    let count = ms / 1000
+    const showTimer = setInterval(() => {
+        count -= 0.1
+        if (count < 0) {
+            clearInterval(showTimer)
+            autoDiv.innerText = 'ㅤ'
+        }
+        if (question) {
+            autoDiv.innerText = 'Думаем над вопросом ' + count.toFixed(1)
+        } else {
+            autoDiv.innerText = 'Задержка между нажатиями ' + count.toFixed(1)
+        }
+    }, 100)
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
             rejectWait = null
+            clearInterval(showTimer)
+            autoDiv.innerText = 'ㅤ'
             resolve()
         }, ms)
         rejectWait = () => {
             clearTimeout(timer)
+            clearInterval(showTimer)
+            autoDiv.innerText = 'ㅤ'
             reject('stopped by user')
             rejectWait = null
         }
@@ -880,12 +895,21 @@ observer.observe({entryTypes: ['resource']})
 
 function highlightAnswers(remove) {
     if (!remove && (!cachedQuestion || cachedQuestion.question !== normalizeText(document.querySelector('.question-title-text').textContent))) {
-        sendQuestion()
+        if (settings.mode === 'manual' || !running) {
+            sendQuestion()
+        }
         return
     }
     highLightDiv.replaceChildren()
     if (remove || !cachedAnswers) {
-        if (remove) statusBody.innerText = 'Подсвечены правильные ответы'
+        if (remove) {
+            cachedAnswers = null
+            cachedQuestion = null
+            cachedCorrect = null
+            cachedAnswerHash = null
+            cachedError = null
+            statusDiv.replaceChildren()
+        }
         return
     }
     for (const el of document.querySelectorAll('.question-inner-html-text')) {
@@ -900,48 +924,42 @@ function highlightAnswers(remove) {
         }
     }
     if (cachedCorrect) {
-        statusBody.innerText = 'Подсвечены правильные ответы'
+        statusDiv.innerText = 'Подсвечены правильные ответы'
     } else {
-        statusBody.innerText = 'В ' + (cachedError ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+        statusDiv.innerText = 'В ' + (cachedError ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
     }
     if (cachedError) {
-        const error = document.createElement('div')
-        error.style.color = 'red'
-        error.innerText = cachedError
-        statusBody.prepend(error)
+        errorDiv.innerText = cachedError
+    } else {
+        errorDiv.replaceChildren()
     }
 }
 
 function listenQuestions() {
-    if (!document.location.href.includes('/quiz-wrapper/') || running) {
-        if (statusDiv?.childElementCount) {
+    if (!document.location.href.includes('/quiz-wrapper/')) {
+        if (shadowRoot) {
+            autoDiv.replaceChildren()
+            errorDiv.replaceChildren()
             statusDiv.replaceChildren()
-            statusBody = null
-            sentResults = false
             highLightDiv.replaceChildren()
-            observerAll.disconnect()
-            observerResize.disconnect()
+            sentResults = false
+            observerAll?.disconnect?.()
+            observerResize?.disconnect?.()
         }
         return
     }
-    if (settings.mode === 'manual' && !statusDiv?.childElementCount) {
+    if (!shadowRoot) {
         addShadowRoot()
-        if (document.querySelector('.questionList')) {
+        if ((settings.mode === 'manual' || !running) && document.querySelector('.questionList')) {
             sendResults()
         }
         function onChanged() {
-            if (settings.mode !== 'manual' || !statusDiv?.childElementCount) return
             if (document.querySelector('.question-inner-html-text')) {
                 highlightAnswers()
             } else if (cachedQuestion) {
-                cachedAnswers = null
-                cachedQuestion = null
-                cachedCorrect = null
-                cachedAnswerHash = null
-                cachedError = null
                 highlightAnswers(true)
             }
-            if (document.querySelector('.questionList')) {
+            if ((settings.mode === 'manual' || !running) && document.querySelector('.questionList')) {
                 sendResults()
             }
         }
@@ -951,29 +969,15 @@ function listenQuestions() {
 
         observerResize = new ResizeObserver(onChanged)
         observerResize.observe(document.documentElement)
-    } else if (settings.mode !== 'manual' && statusDiv?.childElementCount) {
-        statusDiv.replaceChildren()
-        statusBody = null
-        sentResults = false
-        highLightDiv.replaceChildren()
-        observerAll.disconnect()
-        observerResize.disconnect()
     }
 }
 
 function addShadowRoot() {
-    if (!shadowRoot) {
-        shadowRoot = document.body.attachShadow({mode: 'closed'})
-        shadowRoot.append(document.createElement('slot'))
-    }
-    if (!highLightDiv) {
-        highLightDiv = document.createElement('div')
-        shadowRoot.prepend(highLightDiv)
-    }
-    if (!statusDiv) {
-        statusDiv = document.createElement('div')
-        shadowRoot.prepend(statusDiv)
-    }
+    shadowRoot = document.body.attachShadow({mode: 'closed'})
+    shadowRoot.append(document.createElement('slot'))
+    shadowRoot.prepend(highLightDiv)
+    const mainDiv = document.createElement('div')
+    shadowRoot.prepend(mainDiv)
     const div = document.createElement('div')
     div.style.padding = '10px'
     div.style.width = '300px'
@@ -1001,10 +1005,13 @@ function addShadowRoot() {
     headerH1.style.marginTop = '0'
     headerH1.textContent = '🧊 НМО Решатель'
     div.append(headerH1)
-    statusBody = document.createElement('div')
-    statusBody.style.fontSize = '14px'
-    statusBody.style.textAlign = 'center'
-    statusBody.style.margin = '0'
-    div.append(statusBody)
-    statusDiv.append(div)
+    const mainBody = document.createElement('div')
+    mainBody.style.fontSize = '14px'
+    mainBody.style.textAlign = 'center'
+    mainBody.style.margin = '0'
+    mainBody.append(autoDiv)
+    mainBody.append(errorDiv)
+    mainBody.append(statusDiv)
+    div.append(mainBody)
+    mainDiv.append(div)
 }

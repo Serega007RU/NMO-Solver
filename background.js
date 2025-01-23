@@ -1350,7 +1350,7 @@ async function getAnswersByQuestionFromServer(question) {
             headers: {'Content-Type': 'application/json'},
             method: 'POST',
             body: JSON.stringify({name: question}),
-            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+            signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
         const json = await response.json()
         if (json) {
@@ -1371,7 +1371,7 @@ async function getAnswersByTopicFromServer(topicName) {
                 headers: {'Content-Type': 'application/json'},
                 method: 'POST',
                 body: JSON.stringify({name: topicName}),
-                signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+                signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
             })
             const json = await response.json()
             if (json) {
