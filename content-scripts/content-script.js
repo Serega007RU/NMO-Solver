@@ -902,7 +902,7 @@ function highlightAnswers(remove) {
     if (cachedCorrect) {
         statusBody.innerText = 'Подсвечены правильные ответы'
     } else {
-        statusBody.innerText = 'В локальной базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+        statusBody.innerText = 'В ' + (cachedError ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
     }
     if (cachedError) {
         const error = document.createElement('div')

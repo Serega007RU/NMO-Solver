@@ -1477,6 +1477,7 @@ function stop(resetAction=true) {
     started = 0
     if (rejectWait) rejectWait()
     controller.abort()
+    controller = new AbortController()
     waitUntilState(false)
     clearTimeout(reloadTabTimer)
     if (!resetAction) return
