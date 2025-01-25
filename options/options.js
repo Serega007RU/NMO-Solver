@@ -269,13 +269,14 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.updatedTopic) {
         let li = document.getElementById(message.updatedTopic._id)
         if (!li && message.updatedTopic.inputIndex != null) {
-            const result = document.querySelector('.topics li:nth-child(' + (message.updatedTopic.inputIndex + 1) + ')')
-            if (result && result.innerText.trim() === message.updatedTopic.inputName) {
-                li = result
-                li.id = message.updatedTopic._id
-            }
+            li = document.querySelector('.topics li:nth-child(' + message.updatedTopic.inputIndex + ')')
+        }
+        if (!li || li.innerText.trim() !== message.updatedTopic.inputName) {
+            const result = document.evaluate(`//*[text() = '${message.updatedTopic.inputName}']`, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
+            if (result?.singleNodeValue) li = result.singleNodeValue
         }
         if (li) {
+            li.id = message.updatedTopic._id
             updateTopic(message.updatedTopic, li)
         }
     }

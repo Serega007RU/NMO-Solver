@@ -640,6 +640,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         let json = await response.json()
         if (json.globalErrors?.[0]?.code === 'notFound') {
             // TODO у нас проблема с id, в разных кабинетах разные id тем с одинаковым названием
+            console.warn('Не удалось найти элемент по id, возможно тут конфликт с id')
             delete educationalElement.id
             await db.put('topics', educationalElement)
             await searchEducationalElement(educationalElement, cut, inputName)
