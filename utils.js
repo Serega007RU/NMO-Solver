@@ -88,7 +88,7 @@ async function putNewTopic(newTopic, topicsStore) {
         changed = true
         topic.id = newTopic.id
         const oldTopic = await topicsStore.index('id').get(topic.id)
-        if (oldTopic._id !== topic._id) {
+        if (oldTopic && oldTopic._id !== topic._id) {
             topic = joinTopics(topic, oldTopic)
             await topicsStore.delete(oldTopic._id)
             console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
@@ -98,7 +98,7 @@ async function putNewTopic(newTopic, topicsStore) {
         changed = true
         topic.code = newTopic.code
         const oldTopic = await topicsStore.index('code').get(topic.code)
-        if (oldTopic._id !== topic._id) {
+        if (oldTopic && oldTopic._id !== topic._id) {
             topic = joinTopics(topic, oldTopic)
             await topicsStore.delete(oldTopic._id)
             console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
@@ -108,7 +108,7 @@ async function putNewTopic(newTopic, topicsStore) {
         changed = true
         topic.name = newTopic.name
         const oldTopic = await topicsStore.index('name').get(topic.name)
-        if (oldTopic._id !== topic._id) {
+        if (oldTopic && oldTopic._id !== topic._id) {
             topic = joinTopics(topic, oldTopic)
             await topicsStore.delete(oldTopic._id)
             console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
