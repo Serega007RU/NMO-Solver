@@ -832,19 +832,22 @@ async function randomWait() {
 }
 
 function wait(ms, question) {
-    let count = ms / 1000
-    const showTimer = setInterval(() => {
-        count -= 0.1
-        if (count < 0) {
-            clearInterval(showTimer)
-            autoDiv.innerText = 'ㅤ'
-        }
-        if (question) {
-            autoDiv.innerText = 'Думаем над вопросом ' + count.toFixed(1)
-        } else {
-            autoDiv.innerText = 'Задержка между нажатиями ' + count.toFixed(1)
-        }
-    }, 100)
+    let showTimer
+    if (ms >= 250) {
+        let count = ms / 1000
+        showTimer = setInterval(() => {
+            count -= 0.1
+            if (count < 0) {
+                clearInterval(showTimer)
+                autoDiv.innerText = 'ㅤ'
+            }
+            if (question) {
+                autoDiv.innerText = 'Думаем над вопросом ' + count.toFixed(1)
+            } else {
+                autoDiv.innerText = 'Задержка между нажатиями ' + count.toFixed(1)
+            }
+        }, 100)
+    }
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
             rejectWait = null
@@ -864,27 +867,28 @@ function wait(ms, question) {
 
 // здесь дожидаемся когда все http (fetch) запросы save-answers завершатся
 async function waitSendAnswer() {
-    let count = 0
-    const maxWait = Math.floor(Math.random() * (900 - 150) + 150)
-    while (count <= maxWait) {
+    let count = Math.floor(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+    while (count > 0) {
         if (stopRunning) {
             stop()
             return
         }
-        if (countSaveAnswers === countAnsweredAnswers) {
+        if (countSaveAnswers >= countAnsweredAnswers) {
             break
         } else {
             await wait(100)
         }
-        count += 1
+        count -= 100
+        autoDiv.innerText = 'Ждём ответа от портала ' + (count / 1000).toFixed(1)
     }
-    if (count > maxWait) console.warn('не дождались завершения http запросов save-answers', countAnsweredAnswers)
+    autoDiv.innerText = 'ㅤ'
+    if (count <= 0) console.warn('не дождались завершения http запросов save-answers', countAnsweredAnswers)
 }
 
 const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
         if (entry.name.endsWith('/save-answer')) {
-            countSaveAnswers = countSaveAnswers + 1
+            countSaveAnswers++
             // console.log('save-answer', countSaveAnswers)
         } else if (entry.name.endsWith('/token')) {
             chrome.runtime.sendMessage({authData: JSON.parse(localStorage.getItem('rsmu_tokenData')) || JSON.parse(localStorage.getItem('tokenData')), cabinet: document.location.host.split('.')[0].split('-')[1]})
