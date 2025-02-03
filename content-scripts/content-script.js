@@ -6,7 +6,8 @@ let countAnsweredAnswers = 0
 let rejectWait
 let running
 
-let cachedQuestion, cachedAnswers, cachedCorrect, cachedAnswerHash, cachedError, sentResults
+let cachedMessage = {}
+let sentResults
 
 let settings
 let lastScore
@@ -27,8 +28,9 @@ function osReceiveStatus(message) {
         startRepeat = 0
         running = true
         start(message.collectAnswers)
+    } else {
+        listenQuestions()
     }
-    listenQuestions()
 }
 chrome.runtime.sendMessage({
     status: true,
@@ -38,14 +40,10 @@ chrome.runtime.sendMessage({
 
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     if (message.start) {
-        if (stopRunning) {
-            chrome.runtime.sendMessage({reloadPage: true})
-        } else {
-            stopRunning = false
-            startRepeat = 0
-            running = true
-            start()
-        }
+        stopRunning = false
+        startRepeat = 0
+        running = true
+        start()
     } else if (message.stop) {
         stop()
     } else if (message.hasTest) {
@@ -57,22 +55,34 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 })
 
 async function portListener(message) {
-    if (message.answers && (!cachedQuestion || cachedQuestion.question === message.question.question)) {
-        cachedAnswers = message.answers
-        cachedQuestion = message.question
-        cachedCorrect = message.correct
-        cachedAnswerHash = message.answerHash
-        cachedError = message.error
+    if (message.answers && (!cachedMessage.question || cachedMessage.question.question === message.question.question)) {
+        cachedMessage = message
         if (document.querySelector('.question-inner-html-text')) {
             highlightAnswers()
         }
     } else if (message.stats) {
         statusDiv.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
+    } else {
+        console.warn('не соответствие сообщения', message)
     }
     if (settings.mode === 'manual' || !running) return
 
-    // ждём когда прогрузится кнопка следующий вопрос или завершить тест
-    await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"])')
+    await answerQuestion()
+}
+
+async function answerQuestion() {
+    if (stopRunning) return
+
+    // ждём когда прогрузится кнопка следующий вопрос, или завершить тест, или результаты тестов
+    await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"]), .questionList')
+
+    // сбор правильных и не правильных ответов
+    if (document.querySelector('.questionList')) {
+        // sendResults()
+        await wait(1000)
+        await simulateClick(document.querySelector('.mdc-button.mat-primary'))
+        return
+    }
 
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
     if (!settings.goodScore && topic.includes(' - Предварительное тестирование')) {
@@ -88,7 +98,12 @@ async function portListener(message) {
         await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
         // ждём когда пропадёт эта кнопка (типа всё прогрузится)
         await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
-        runTest()
+        // runTest()
+        return
+    }
+
+    if (!cachedMessage.answers) {
+        console.warn('не подгружены ответы, двойной запуск?')
         return
     }
 
@@ -119,7 +134,7 @@ async function portListener(message) {
         checkedElement = document.querySelector('input[type="checkbox"]:checked')
     }
 
-    for (const answer of message.answers.sort(() => 0.5 - Math.random())) {
+    for (const answer of cachedMessage.answers.sort(() => 0.5 - Math.random())) {
         const answersElements = document.querySelectorAll('.question-inner-html-text')
         for (const el of answersElements) {
             if (normalizeText(el.textContent) === answer) {
@@ -161,11 +176,11 @@ async function portListener(message) {
 
     await nextQuestion()
 
-    runTest()
+    // runTest()
 }
 
 async function nextQuestion() {
-    highlightAnswers(true)
+    // highlightAnswers(true)
     // если мы видим кнопку завершения теста
     const nextQuestionButton = document.querySelector('.mat-card-actions-container .mat-primary:not([disabled="true"],[style="display: none;"])')
     if (nextQuestionButton) {
@@ -180,10 +195,10 @@ async function nextQuestion() {
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
             await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
         } else {
-            const waitNextQuestion = waitForLoadNextQuestion()
+            // const waitNextQuestion = waitForLoadNextQuestion()
             // кликаем следующий вопрос
             await simulateClick(nextQuestionButton)
-            await waitNextQuestion
+            // await waitNextQuestion
             countAnsweredAnswers = countAnsweredAnswers + 1
         }
     }
@@ -222,10 +237,7 @@ let startRepeat = 0
 let hasISTask = false
 let hasBack = false
 async function start(collectAnswers) {
-    if (stopRunning) {
-        stop()
-        return
-    }
+    if (stopRunning) return
     if (!running) return
     if (!port) {
         port = chrome.runtime.connect()
@@ -450,50 +462,21 @@ async function start(collectAnswers) {
     } else {
         runTest()
     }
-
-    /* else {
-        stop()
-    }*/
 }
 
 async function runTest() {
-    if (stopRunning) {
-        stop()
-        return
-    }
-    // if (!document.querySelector('.nmifo-logo')) {
-    //     stop()
-    //     return
-    // }
-
-    await randomWait()
+    const hasListener = shadowRoot != null
+    listenQuestions()
+    if (stopRunning) return
 
     // ждём когда прогрузится панелька (заголовок)
     const button = await watchForElement('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])')
     if (button.textContent.trim() === 'Начать тестирование') {
         await simulateClick(button)
-        await randomWait()
+        // await randomWait()
     }
 
-    await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"]), .questionList')
-
-    // console.log(document.querySelector('.question-title-text')?.textContent?.trim())
-
-    // const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
-    
-    // сбор правильных и не правильных ответов
-    if (document.querySelector('.questionList')) {
-        sendResults()
-        await wait(1000)
-        if (!stopRunning) {
-            await simulateClick(document.querySelector('.mdc-button.mat-primary'))
-        } else {
-            stop()
-        }
-        return
-    }
-
-    sendQuestion()
+    if (hasListener) answerQuestion()
 }
 
 function sendQuestion() {
@@ -511,16 +494,15 @@ function sendQuestion() {
         topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
-    cachedAnswers = null
-    cachedError = null
-    cachedCorrect = null
-    cachedAnswerHash = null
-    cachedQuestion = question
+    cachedMessage = {}
+    cachedMessage.question = question
     statusDiv.textContent = 'Обращение к базе данных с ответами...'
     port.postMessage({question})
 }
 
+// сбор правильных и не правильных ответов
 function sendResults() {
+    rejectWait?.()
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
@@ -572,7 +554,7 @@ function watchForElement(selector, reverse) {
             rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
-            reject('stopped by user')
+            reject('canceled, user intervened')
         }
 
         const observer = new MutationObserver(() => {
@@ -606,7 +588,7 @@ function watchForText(selector, text, reverse) {
             rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
-            reject('stopped by user')
+            reject('canceled, user intervened')
         }
 
         const observer = new MutationObserver(() => {
@@ -633,7 +615,7 @@ function watchForChangeElement(selector) {
             rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
-            reject('stopped by user')
+            reject('canceled, user intervened')
         }
 
         const observer = new MutationObserver((mutations) => {
@@ -662,7 +644,7 @@ function watchForRemoveElement(selector) {
             rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
-            reject('stopped by user')
+            reject('canceled, user intervened')
         }
 
         const observer = new MutationObserver((mutations) => {
@@ -693,7 +675,7 @@ function waitForLoadNextQuestion() {
             rejectWait = null
             observer.disconnect()
             clearTimeout(timer)
-            reject('stopped by user')
+            reject('canceled, user intervened')
         }
 
         const observer = new MutationObserver((mutations) => {
@@ -761,9 +743,9 @@ async function simulateClick(element, count = 0) {
     }
     const coords2 = getRandomCoordinates(element)
     element.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window, clientX: coords2.x, clientY: coords2.y, screenX: coords2.x, screenY: coords2.y}))
-    if (settings.answerWaitMax) await wait(Math.random() * (500 - 100) + 100)
+    if (settings.clickWaitMax) await wait(Math.random() * (500 - 100) + 100)
     element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window, clientX: coords1.x, clientY: coords1.y, screenX: coords1.x, screenY: coords1.y, buttons: 1, detail: 1}))
-    if (settings.answerWaitMax) await wait(Math.random() * (250 - 50) + 50)
+    if (settings.clickWaitMax) await wait(Math.random() * (250 - 50) + 50)
     element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window, clientX: coords1.x, clientY: coords1.y, screenX: coords1.x, screenY: coords1.y, buttons: 0, detail: 1}))
     element.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window, clientX: coords1.x, clientY: coords1.y, screenX: coords1.x, screenY: coords1.y, buttons: 0, detail: 1}))
 }
@@ -799,9 +781,8 @@ function getRandomCoordinates(element, half) {
 function highlight(element, color) {
     const div = document.createElement('div')
     const clientRect = element.getBoundingClientRect()
-    const clientOffset = getOffset(element)
-    div.style.left = clientOffset.left + 'px'
-    div.style.top = clientOffset.top + 'px'
+    div.style.left = clientRect.left + window.scrollX + 'px'
+    div.style.top = clientRect.top + window.scrollY + 'px'
     div.style.width = clientRect.width + 10 + 'px'
     div.style.height = clientRect.height + 'px'
     div.style.position = 'absolute'
@@ -810,18 +791,11 @@ function highlight(element, color) {
     div.style.pointerEvents = 'none'
     highLightDiv.append(div)
 }
-function getOffset(el) {
-    const rect = el.getBoundingClientRect()
-    return {
-        left: rect.left + window.scrollX,
-        top: rect.top + window.scrollY
-    }
-}
 
 function stop() {
     running = false
     stopRunning = true
-    if (rejectWait) rejectWait()
+    rejectWait?.()
     countSaveAnswers = 0
     countAnsweredAnswers = 0
     port.postMessage({running: false, collectAnswers: null})
@@ -859,7 +833,7 @@ function wait(ms, question) {
             clearTimeout(timer)
             clearInterval(showTimer)
             autoDiv.innerText = 'ㅤ'
-            reject('stopped by user')
+            reject('canceled, user intervened')
             rejectWait = null
         }
     })
@@ -869,10 +843,7 @@ function wait(ms, question) {
 async function waitSendAnswer() {
     let count = Math.floor(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
     while (count > 0) {
-        if (stopRunning) {
-            stop()
-            return
-        }
+        if (stopRunning) return
         if (countSaveAnswers >= countAnsweredAnswers) {
             break
         } else {
@@ -898,20 +869,15 @@ const observer = new PerformanceObserver((list) => {
 observer.observe({entryTypes: ['resource']})
 
 function highlightAnswers(remove) {
-    if (!remove && (!cachedQuestion || cachedQuestion.question !== normalizeText(document.querySelector('.question-title-text').textContent))) {
-        if (settings.mode === 'manual' || !running) {
-            sendQuestion()
-        }
+    if (!remove && (!cachedMessage.question || cachedMessage.question.question !== normalizeText(document.querySelector('.question-title-text').textContent))) {
+        rejectWait?.()
+        sendQuestion()
         return
     }
     highLightDiv.replaceChildren()
-    if (remove || !cachedAnswers) {
+    if (remove || !cachedMessage.answers) {
         if (remove) {
-            cachedAnswers = null
-            cachedQuestion = null
-            cachedCorrect = null
-            cachedAnswerHash = null
-            cachedError = null
+            cachedMessage = {}
             statusDiv.replaceChildren()
         }
         return
@@ -919,21 +885,21 @@ function highlightAnswers(remove) {
     for (const el of document.querySelectorAll('.question-inner-html-text')) {
         const formField = el.closest('.mdc-form-field')
         if (formField.querySelector('input:disabled')) return
-        if (cachedAnswers.includes(normalizeText(el.textContent))) {
-            highlight(formField, cachedCorrect ? 'rgb(26 182 65 / 60%)' : 'rgb(190 123 9 / 60%)')
+        if (cachedMessage.answers?.includes(normalizeText(el.textContent))) {
+            highlight(formField, cachedMessage.correct ? 'rgb(26 182 65 / 60%)' : 'rgb(190 123 9 / 60%)')
         } else if (formField.querySelector('input:checked')) {
-            if (cachedCorrect) {
+            if (cachedMessage.correct) {
                 highlight(formField, 'rgb(190 9 9 / 60%)')
             }
         }
     }
-    if (cachedCorrect) {
+    if (cachedMessage.correct) {
         statusDiv.innerText = 'Подсвечены правильные ответы'
     } else {
-        statusDiv.innerText = 'В ' + (cachedError ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedQuestion.answers[cachedAnswerHash].combinations.length
+        statusDiv.innerText = 'В ' + (cachedMessage.error ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedMessage.question?.answers[cachedMessage.answerHash].combinations.length
     }
-    if (cachedError) {
-        errorDiv.innerText = cachedError
+    if (cachedMessage.error) {
+        errorDiv.innerText = cachedMessage.error
     } else {
         errorDiv.replaceChildren()
     }
@@ -954,16 +920,16 @@ function listenQuestions() {
     }
     if (!shadowRoot) {
         addShadowRoot()
-        if ((settings.mode === 'manual' || !running) && document.querySelector('.questionList')) {
+        if (document.querySelector('.questionList')) {
             sendResults()
         }
         function onChanged() {
             if (document.querySelector('.question-inner-html-text')) {
                 highlightAnswers()
-            } else if (cachedQuestion) {
+            } else if (cachedMessage.question) {
                 highlightAnswers(true)
             }
-            if ((settings.mode === 'manual' || !running) && document.querySelector('.questionList')) {
+            if (document.querySelector('.questionList')) {
                 sendResults()
             }
         }
