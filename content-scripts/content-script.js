@@ -5,6 +5,7 @@ let countSaveAnswers = 0
 let countAnsweredAnswers = 0
 let rejectWait
 let running
+let started
 
 let cachedMessage = {}
 let sentResults
@@ -12,7 +13,7 @@ let sentResults
 let settings
 let lastScore
 
-let shadowRoot, observerAll, observerResize
+let shadowRoot, observerAll, observerResize, globalObserver
 const highLightDiv = document.createElement('div')
 const autoDiv = document.createElement('div')
 const errorDiv = document.createElement('div')
@@ -21,6 +22,7 @@ const statusDiv = document.createElement('div')
 
 
 function osReceiveStatus(message) {
+    listenQuestions()
     if (message.settings) settings = message.settings
     if (message.lastScore) lastScore = message.lastScore
     if (message.running) {
@@ -28,8 +30,6 @@ function osReceiveStatus(message) {
         startRepeat = 0
         running = true
         start(message.collectAnswers)
-    } else {
-        listenQuestions()
     }
 }
 chrome.runtime.sendMessage({
@@ -63,9 +63,10 @@ async function portListener(message) {
     } else if (message.stats) {
         statusDiv.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
     } else {
-        console.warn('не соответствие сообщения', message)
+        console.warn('Не соответствие сообщения, возможно в процесс вмешался пользователь', message, cachedMessage.question.question)
+        return
     }
-    if (settings.mode === 'manual' || !running) return
+    if (settings.mode === 'manual' || !running || !started) return
 
     await answerQuestion()
 }
@@ -74,7 +75,7 @@ async function answerQuestion() {
     if (stopRunning) return
 
     // ждём когда прогрузится кнопка следующий вопрос, или завершить тест, или результаты тестов
-    await watchForElement('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"]), .questionList')
+    await globalObserver.waitFor('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"]), .questionList')
 
     // сбор правильных и не правильных ответов
     if (document.querySelector('.questionList')) {
@@ -97,7 +98,7 @@ async function answerQuestion() {
         // подтверждаем завершение теста
         await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
         // ждём когда пропадёт эта кнопка (типа всё прогрузится)
-        await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
+        await globalObserver.waitFor('.mdc-dialog__surface .mdc-button.mat-primary', {remove: true})
         // runTest()
         return
     }
@@ -130,7 +131,7 @@ async function answerQuestion() {
         await simulateClick(element)
         await randomWait()
         // подобным дибильным образом мы ждём когда кривой скрипт сайта перестроит все элементы ответов
-        await watchForElement('#' + idOfLastAnswer, true)
+        await globalObserver.waitFor('#' + idOfLastAnswer, {remove: true})
         checkedElement = document.querySelector('input[type="checkbox"]:checked')
     }
 
@@ -153,7 +154,7 @@ async function answerQuestion() {
                 await simulateClick(element)
                 await randomWait()
                 // подобным дибильным образом мы ждём когда кривой скрипт сайта перестроит все элементы ответов
-                await watchForElement('#' + idOfLastAnswer, true)
+                await globalObserver.waitFor('#' + idOfLastAnswer, {remove: true})
                 break
             }
         }
@@ -193,7 +194,7 @@ async function nextQuestion() {
             // подтверждаем завершение теста
             await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
-            await watchForElement('.mdc-dialog__surface .mdc-button.mat-primary', true)
+            await globalObserver.waitFor('.mdc-dialog__surface .mdc-button.mat-primary', {remove: true})
         } else {
             // const waitNextQuestion = waitForLoadNextQuestion()
             // кликаем следующий вопрос
@@ -209,18 +210,18 @@ async function attemptToClosePopups(count = 0) {
     while (popup) {
         if (stopRunning) return
         if (popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')) {
-            const waitRemove = watchForRemoveElement('.v-window-closebox')
+            const waitRemove = globalObserver.waitFor('.v-window-closebox', {removeOnce: true})
             await simulateClick(popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)'), count)
             await randomWait()
             await waitRemove
             // а зачем здесь "Назад" в проверке? А потому что портал может открыть тест в popup'е, ДА, ВЕСЬ тест прямо в popup'e!!!
         } else if (popup.querySelector('.v-button') && !popup.querySelector('.v-button').textContent.endsWith('Назад')) {
-            const waitRemove = watchForRemoveElement('.v-button')
+            const waitRemove = globalObserver.waitFor('.v-button', {removeOnce: true})
             await simulateClick(popup.querySelector('.v-button'), count)
             await randomWait()
             await waitRemove
         } else if (popup.querySelector('[class*="v-Notification"]')) {
-            const waitRemove = watchForRemoveElement('[class*="v-Notification"]')
+            const waitRemove = globalObserver.waitFor('[class*="v-Notification"]', {removeOnce: true})
             await simulateClick(popup.querySelector('[class*="v-Notification"]'), count)
             await randomWait()
             popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
@@ -239,6 +240,8 @@ let hasBack = false
 async function start(collectAnswers) {
     if (stopRunning) return
     if (!running) return
+    if (!globalObserver) globalObserver = new GlobalSelectorMutationObserver()
+    listenQuestions(true)
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
@@ -261,7 +264,7 @@ async function start(collectAnswers) {
     countSaveAnswers = 0
     countAnsweredAnswers = 0
 
-    await watchForElement('.v-app-loading', true)
+    await globalObserver.waitFor('.v-app-loading', {remove: true})
 
     await wait(250)
     await randomWait()
@@ -294,7 +297,7 @@ async function start(collectAnswers) {
     await attemptToClosePopups()
 
     if (document.querySelector('.v-slot-h1')?.textContent.toLowerCase().includes('вариант №')) {
-        let waitReaction = watchForChangeElement('.v-widget')
+        const waitReaction = globalObserver.waitFor('.v-widget', {change: true})
         await simulateClick(Array.from(document.querySelectorAll('.v-button-caption')).find(el => el.textContent === 'Завершить') || Array.from(document.querySelectorAll('.v-button-caption')).find(el => el.textContent === 'Вернуться к обучению'))
         await waitReaction
         start(collectAnswers)
@@ -303,14 +306,14 @@ async function start(collectAnswers) {
 
     if (document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Скачать сертификат' || document.querySelector('.v-align-center .v-button-caption')?.textContent === 'Ожидание выгрузки результатов...') {
         // TODO не всегда получается дождаться скачивания сертификата
-        // await watchForText('.v-align-center .v-button-caption', 'Скачать сертификат')
+        // await globalObserver.waitFor('.v-align-center .v-button-caption', {text: 'Скачать сертификат'})
         if (settings.goodScore && !hasGoodScore && !hasBack) {
             hasBack = true
-            const waitNext = watchForChangeElement('.v-slot-iom-elementbox-text')
+            const waitNext = globalObserver.waitFor('.v-slot-iom-elementbox-text', {change: true})
             // TODO иногда кнопка Далее активна и есть страница дальше даже после страницы получения сертификата
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
             await waitNext
-            // await watchForElement('.c-table-clickable-cell')
+            // await globalObserver.waitFor('.c-table-clickable-cell')
         } else {
             const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
 
@@ -437,12 +440,12 @@ async function start(collectAnswers) {
         await attemptToClosePopups()
         if (hasISTask) {
             hasISTask = false
-            await watchForChangeElement('.v-table')
+            await globalObserver.waitFor('.v-table', {change: true})
             start(collectAnswers)
             return
         }
         // ждём когда появится новый тест и открываем его
-        const variant = await watchForText('.c-table-clickable-cell', ' - не завершен')
+        const variant = await globalObserver.waitFor('.c-table-clickable-cell', {text: ' - не завершен'})
         await randomWait()
         await attemptToClosePopups()
         await simulateClick(variant)
@@ -453,7 +456,7 @@ async function start(collectAnswers) {
     // Если есть кнопка "Далее" и по кругу перезапускаем данную функцию
     const next = document.querySelector('.v-button-blue-button.v-button-icon-align-right:not([aria-disabled="true"])')
     if (next) {
-        const waitNext = watchForChangeElement('.v-slot-iom-elementbox-text')
+        const waitNext = globalObserver.waitFor('.v-slot-iom-elementbox-text', {change: true})
         await simulateClick(next)
         await waitNext
         // await wait(250)
@@ -465,18 +468,17 @@ async function start(collectAnswers) {
 }
 
 async function runTest() {
-    const hasListener = shadowRoot != null
-    listenQuestions()
     if (stopRunning) return
 
     // ждём когда прогрузится панелька (заголовок)
-    const button = await watchForElement('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])')
+    const button = await globalObserver.waitFor('.quiz-info-row .quiz-buttons-primary:not([disabled="true"],[style="display: none;"])')
     if (button.textContent.trim() === 'Начать тестирование') {
         await simulateClick(button)
-        // await randomWait()
+        await randomWait()
     }
 
-    if (hasListener) answerQuestion()
+    if (cachedMessage.question?.answers || sentResults) answerQuestion()
+    started = true
 }
 
 function sendQuestion() {
@@ -502,14 +504,17 @@ function sendQuestion() {
 
 // сбор правильных и не правильных ответов
 function sendResults() {
-    rejectWait?.()
+    if (sentResults) return
+    sentResults = true
+    if (running && started) {
+        globalObserver?.rejectAllWait('canceled, user intervened')
+        rejectWait?.()
+    }
     if (!port) {
         port = chrome.runtime.connect()
         port.onMessage.addListener(portListener)
         port.onDisconnect.addListener(() => port = null)
     }
-    if (sentResults) return
-    sentResults = true
     autoDiv.replaceChildren()
     errorDiv.replaceChildren()
     statusDiv.textContent = 'Сохранение результатов теста...'
@@ -537,163 +542,36 @@ function sendResults() {
 
 // console.log('injected!')
 
-function watchForElement(selector, reverse) {
-    return new Promise((resolve, reject) => {
-        const element = document.querySelector(selector)
-        if (!reverse ? element : !element) {
-            rejectWait = null
-            resolve(element)
-            return
-        }
-
-        let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания элемента "${selector}"`})
-        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
-
-        rejectWait = () => {
-            rejectWait = null
-            observer.disconnect()
-            clearTimeout(timer)
-            reject('canceled, user intervened')
-        }
-
-        const observer = new MutationObserver(() => {
-            const element = document.querySelector(selector)
-            if (!reverse ? element : !element) {
-                observer.disconnect()
-                clearTimeout(timer)
-                rejectWait = null
-                resolve(element)
-            }
-        })
-        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
-    })
-}
-
-function watchForText(selector, text, reverse) {
-    return new Promise((resolve, reject) => {
-        const element = document.querySelector(selector)
-        const textContent = element?.textContent?.trim()
-        if (textContent && (!reverse ? textContent.includes(text) : !textContent.includes(text))) {
-            rejectWait = null
-            resolve(element)
-            return
-        }
-
-        let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания текста элемента "${selector}" "${text}"`})
-        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
-
-        rejectWait = () => {
-            rejectWait = null
-            observer.disconnect()
-            clearTimeout(timer)
-            reject('canceled, user intervened')
-        }
-
-        const observer = new MutationObserver(() => {
-            const element = document.querySelector(selector)
-            const textContent = element?.textContent?.trim()
-            if (textContent && (!reverse ? textContent.includes(text) : !textContent.includes(text))) {
-                observer.disconnect()
-                clearTimeout(timer)
-                rejectWait = null
-                resolve(element)
-            }
-        })
-        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
-    })
-}
-
-function watchForChangeElement(selector) {
-    return new Promise((resolve, reject) => {
-        let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания изменения элемента "${selector}"`})
-        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
-
-        rejectWait = () => {
-            rejectWait = null
-            observer.disconnect()
-            clearTimeout(timer)
-            reject('canceled, user intervened')
-        }
-
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                const element = mutation.target.matches(selector) || mutation.target.closest(selector) || mutation.target.querySelector(selector)
-                if (element) {
-                    observer.disconnect()
-                    clearTimeout(timer)
-                    rejectWait = null
-                    resolve(element)
-                    break
-                }
-            }
-        })
-        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
-    })
-}
-
-function watchForRemoveElement(selector) {
-    return new Promise((resolve, reject) => {
-        let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания удаления элемента "${selector}"`})
-        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
-
-        rejectWait = () => {
-            rejectWait = null
-            observer.disconnect()
-            clearTimeout(timer)
-            reject('canceled, user intervened')
-        }
-
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const el of mutation.removedNodes) {
-                    if (el?.matches?.(selector) || el?.querySelector?.(selector)) {
-                        observer.disconnect()
-                        clearTimeout(timer)
-                        rejectWait = null
-                        resolve(el)
-                        return
-                    }
-                }
-            }
-        })
-        observer.observe(document.documentElement, {childList: true, subtree: true})
-    })
-}
-
 // таким уродским костылём ждём когда следующий вопрос 100% прогрузится
-function waitForLoadNextQuestion() {
-    return new Promise((resolve, reject) => {
-        let timer = setTimeout(() => {
-            chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания вопроса'})
-        }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
-
-        rejectWait = () => {
-            rejectWait = null
-            observer.disconnect()
-            clearTimeout(timer)
-            reject('canceled, user intervened')
-        }
-
-        const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
-                    if (!mutation.target.disabled && mutation.target.closest('.mdc-form-field')) {
-                        observer.disconnect()
-                        clearTimeout(timer)
-                        rejectWait = null
-                        resolve(mutation.target)
-                        break
-                    }
-                }
-            }
-        })
-        observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
-    })
-}
+// function waitForLoadNextQuestion() {
+//     return new Promise((resolve, reject) => {
+//         const timer = setTimeout(() => {
+//             chrome.runtime.sendMessage({reloadPage: true, error: 'Истекло время ожидания вопроса'})
+//         }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+//
+//         rejectWait = () => {
+//             rejectWait = null
+//             observer.disconnect()
+//             clearTimeout(timer)
+//             reject('canceled, user intervened')
+//         }
+//
+//         const observer = new MutationObserver((mutations) => {
+//             for (const mutation of mutations) {
+//                 if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
+//                     if (!mutation.target.disabled && mutation.target.closest('.mdc-form-field')) {
+//                         observer.disconnect()
+//                         clearTimeout(timer)
+//                         rejectWait = null
+//                         resolve(mutation.target)
+//                         break
+//                     }
+//                 }
+//             }
+//         })
+//         observer.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
+//     })
+// }
 
 async function simulateClick(element, count = 0) {
     if (stopRunning) return
@@ -794,7 +672,9 @@ function highlight(element, color) {
 
 function stop() {
     running = false
+    started = false
     stopRunning = true
+    globalObserver?.rejectAllWait('canceled, user intervened')
     rejectWait?.()
     countSaveAnswers = 0
     countAnsweredAnswers = 0
@@ -870,7 +750,10 @@ observer.observe({entryTypes: ['resource']})
 
 function highlightAnswers(remove) {
     if (!remove && (!cachedMessage.question || cachedMessage.question.question !== normalizeText(document.querySelector('.question-title-text').textContent))) {
-        rejectWait?.()
+        if (running && started) {
+            globalObserver?.rejectAllWait('canceled, user intervened')
+            rejectWait?.()
+        }
         sendQuestion()
         return
     }
@@ -905,41 +788,29 @@ function highlightAnswers(remove) {
     }
 }
 
-function listenQuestions() {
-    if (!document.location.href.includes('/quiz-wrapper/')) {
-        if (shadowRoot) {
-            autoDiv.replaceChildren()
-            errorDiv.replaceChildren()
-            statusDiv.replaceChildren()
-            highLightDiv.replaceChildren()
-            sentResults = false
-            observerAll?.disconnect?.()
-            observerResize?.disconnect?.()
-        }
-        return
+function listenQuestions(start) {
+    if ((start ? !document.querySelector('.v-app') : true) && !document.location.href.includes('/quiz-wrapper/') && !document.querySelector('lib-quiz-page')) return
+    if (shadowRoot) return
+    addShadowRoot()
+    if (document.querySelector('.questionList')) {
+        sendResults()
     }
-    if (!shadowRoot) {
-        addShadowRoot()
+    function onChanged() {
+        if (document.querySelector('.question-inner-html-text')) {
+            highlightAnswers()
+        } else if (cachedMessage.question) {
+            highlightAnswers(true)
+        }
         if (document.querySelector('.questionList')) {
             sendResults()
         }
-        function onChanged() {
-            if (document.querySelector('.question-inner-html-text')) {
-                highlightAnswers()
-            } else if (cachedMessage.question) {
-                highlightAnswers(true)
-            }
-            if (document.querySelector('.questionList')) {
-                sendResults()
-            }
-        }
-
-        observerAll = new MutationObserver(onChanged)
-        observerAll.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
-
-        observerResize = new ResizeObserver(onChanged)
-        observerResize.observe(document.documentElement)
     }
+
+    observerAll = new MutationObserver(onChanged)
+    observerAll.observe(document.documentElement, {attributes: true, childList: true, subtree: true})
+
+    observerResize = new ResizeObserver(onChanged)
+    observerResize.observe(document.documentElement)
 }
 
 function addShadowRoot() {
@@ -984,4 +855,112 @@ function addShadowRoot() {
     mainBody.append(statusDiv)
     div.append(mainBody)
     mainDiv.append(div)
+}
+
+class GlobalSelectorMutationObserver {
+    constructor() {
+        this.observer = new MutationObserver(this.handleMutations.bind(this))
+        this.config = { attributes: true, childList: true, subtree: true }
+        this.selectors = new Map() // Храним селекторы и их Promises
+        this.observer.observe(document.documentElement, this.config)
+    }
+
+    waitFor(selector, options) {
+        return new Promise((resolve, reject) => {
+            if (!options) options = {add: true}
+            const result = this.checkForResolve(null, selector, options)
+            if (result) {
+                resolve(result)
+                return
+            }
+
+            const timerTimeoutId = setTimeout(() => {
+                chrome.runtime.sendMessage({reloadPage: true, error: `Истекло время ожидания элемента "${selector}", options: ${JSON.stringify(options)}`})
+                reject('timeout')
+            }, Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+
+            if (!this.selectors.has(selector)) {
+                this.selectors.set(selector, [])
+            }
+            this.selectors.get(selector).push({ resolve, reject, options, timerTimeoutId })
+        })
+    }
+
+    // listenFor(listener, selector, options) {
+    //     if (!this.selectors.has(selector)) {
+    //         this.selectors.set(selector, [])
+    //     }
+    //     this.selectors.get(selector).push({ listener, options })
+    // }
+
+    handleMutations(mutations) {
+        this.selectors.forEach((resolvers, selector) => {
+            let shouldDelete = false
+
+            resolvers.forEach(({ resolve, options, timerTimeoutId }) => {
+                const result = this.checkForResolve(mutations, selector, options)
+                if (result) {
+                    shouldDelete = true
+                    clearTimeout(timerTimeoutId)
+                    resolve(result)
+                }
+            })
+
+            if (shouldDelete) {
+                this.selectors.delete(selector)
+            }
+        })
+    }
+
+    checkForResolve(mutations, selector, options) {
+        if (options.removeOnce) {
+            if (!mutations) return
+            for (const mutation of mutations) {
+                for (const el of mutation.removedNodes) {
+                    if (el?.matches?.(selector) || el?.querySelector?.(selector)) {
+                        return el
+                    }
+                }
+            }
+        } else if (options.change) {
+            if (!mutations) return
+            for (const mutation of mutations) {
+                const element = mutation?.target?.matches?.(selector) || mutation?.target?.closest?.(selector) || mutation?.target?.querySelector?.(selector)
+                if (element) return element
+            }
+        // } else if (options.attribute) {
+        //     if (!mutations) return
+        //     // ещё пока не доработано
+        } else {
+            const element = document.querySelector(selector)
+            if (options.add) {
+                if (element) return element
+            } else if (options.remove) {
+                if (!element) return true
+            } else if (options.text) {
+                const textContent = element?.textContent?.trim()
+                if (textContent && (!options.reverse ? textContent.includes(options.text) : !textContent.includes(options.text))) {
+                    return element
+                }
+            } else {
+                throw Error('Не верно передан options')
+            }
+        }
+    }
+
+    rejectAllWait(reason) {
+        this.selectors.forEach((resolvers, selector) => {
+            resolvers.forEach(({ reject, timerTimeoutId }) => {
+                clearTimeout(timerTimeoutId)
+                reject(reason)
+            })
+            this.selectors.delete(selector)
+        })
+    }
+
+    // noinspection JSUnusedGlobalSymbols
+    disconnect() {
+        this.observer.disconnect()
+        this.selectors.clear()
+    }
 }
