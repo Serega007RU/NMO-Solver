@@ -477,6 +477,20 @@ async function runTest() {
         await randomWait()
     }
 
+    // Если ранее уже отвечали на вопросы, то ищем последний не отвеченный вопрос и переключаемся на него
+    if (document.querySelector('.item-test_answered')) {
+        const lastNotAnswered = document.querySelector('.item-test:not(.item-test_answered)')
+        if (!lastNotAnswered.classList.contains('item-test_current')) {
+            if (document.querySelector('.expansion-panel-custom_toggle-title')?.textContent === 'Развернуть') {
+                await simulateClick(document.querySelector('.expansion-panel-custom_toggle-title'))
+                await wait(500)
+                await randomWait()
+            }
+            await simulateClick(lastNotAnswered)
+            await randomWait()
+        }
+    }
+
     if (cachedMessage.question?.answers || sentResults) answerQuestion()
     started = true
 }
