@@ -195,6 +195,7 @@ async function nextQuestion() {
             await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
             await globalObserver.waitFor('.mdc-dialog__surface .mdc-button.mat-primary', {remove: true})
+            // runTest()
         } else {
             // const waitNextQuestion = waitForLoadNextQuestion()
             // кликаем следующий вопрос
@@ -480,7 +481,7 @@ async function runTest() {
     // Если ранее уже отвечали на вопросы, то ищем последний не отвеченный вопрос и переключаемся на него
     if (document.querySelector('.item-test_answered')) {
         const lastNotAnswered = document.querySelector('.item-test:not(.item-test_answered)')
-        if (!lastNotAnswered.classList.contains('item-test_current')) {
+        if (lastNotAnswered && !lastNotAnswered.classList.contains('item-test_current')) {
             if (document.querySelector('.expansion-panel-custom_toggle-title')?.textContent === 'Развернуть') {
                 await simulateClick(document.querySelector('.expansion-panel-custom_toggle-title'))
                 await wait(500)
@@ -491,7 +492,7 @@ async function runTest() {
         }
     }
 
-    if (cachedMessage.question?.answers || sentResults) answerQuestion()
+    if (cachedMessage.answers || sentResults) answerQuestion()
     started = true
 }
 
@@ -552,6 +553,10 @@ function sendResults() {
     sendObject.results = results
     sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
     port.postMessage(sendObject)
+
+    if (settings.mode === 'manual' || !running || !started) return
+
+    answerQuestion()
 }
 
 // console.log('injected!')
