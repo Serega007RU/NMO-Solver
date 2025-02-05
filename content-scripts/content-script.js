@@ -207,7 +207,7 @@ async function nextQuestion() {
 }
 
 async function attemptToClosePopups(count = 0) {
-    let popup = Array.from(document.querySelectorAll('.popupContent')).filter(el => el.innerText.length).pop()
+    let popup = Array.from(document.querySelectorAll('.popupContent')).filter(el => el.innerText.trim().length).pop()
     while (popup) {
         if (stopRunning) return
         if (popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')) {
@@ -231,7 +231,7 @@ async function attemptToClosePopups(count = 0) {
         } else {
             break
         }
-        popup = Array.from(document.querySelectorAll('.popupContent')).filter(el => el.innerText.length).pop()
+        popup = Array.from(document.querySelectorAll('.popupContent')).filter(el => el.innerText.trim().length).pop()
     }
 }
 
@@ -310,7 +310,7 @@ async function start(collectAnswers) {
         // await globalObserver.waitFor('.v-align-center .v-button-caption', {text: 'Скачать сертификат'})
         if (settings.goodScore && !hasGoodScore && !hasBack) {
             hasBack = true
-            const waitNext = globalObserver.waitFor('.v-slot-iom-elementbox-text', {change: true})
+            const waitNext = globalObserver.waitFor('.c-groupbox-nocollapsable, .v-slot-iom-elementbox-text', {change: true})
             // TODO иногда кнопка Далее активна и есть страница дальше даже после страницы получения сертификата
             await simulateClick(document.querySelector('.v-button-blue-button.v-button-icon-align-right').parentElement.firstElementChild)
             await waitNext
@@ -455,9 +455,9 @@ async function start(collectAnswers) {
     }
 
     // Если есть кнопка "Далее" и по кругу перезапускаем данную функцию
-    const next = document.querySelector('.v-button-blue-button.v-button-icon-align-right:not([aria-disabled="true"])')
+    const next = document.querySelector('.v-button-blue-button.v-button-icon:not([aria-disabled="true"])')
     if (next) {
-        const waitNext = globalObserver.waitFor('.v-slot-iom-elementbox-text', {change: true})
+        const waitNext = globalObserver.waitFor('.c-groupbox-nocollapsable, .v-slot-iom-elementbox-text', {change: true})
         await simulateClick(next)
         await waitNext
         // await wait(250)
@@ -548,7 +548,7 @@ function sendResults() {
         }
         results.push(question)
     }
-    const topic = document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title').textContent
+    const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
     sendObject.topic = normalizeText(topic)
     sendObject.results = results
     sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
