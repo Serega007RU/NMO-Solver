@@ -1039,12 +1039,12 @@ chrome.runtime.onConnect.addListener((port) => {
 
             for (const resultQuestion of message.results) {
                 let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
-                if (!key) {
-                    const result = await getAnswersByQuestionFromServer(resultQuestion.question)
-                    if (result?.question) {
-                        key = result.question._id
-                    }
-                }
+                // if (!key) {
+                //     const result = await getAnswersByQuestionFromServer(resultQuestion.question)
+                //     if (result?.question) {
+                //         key = result.question._id
+                //     }
+                // }
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
                 if (!key) {
                     if (resultQuestion.correct) {
