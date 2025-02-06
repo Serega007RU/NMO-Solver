@@ -876,23 +876,21 @@ chrome.runtime.onConnect.addListener((port) => {
                     console.log('Внесена новая тема в базу', message.question.topics[0])
                 }
             }
-            let key = await db.getKeyFromIndex('questions', 'question', message.question.question)
-            if (!key) {
+            let question = await db.getFromIndex('questions', 'question', message.question.question)
+            if (!question) {
                 searchedOnServer = true
                 const result = await getAnswersByQuestionFromServer(message.question.question)
                 if (result?.question) {
-                    key = result.question._id
+                    question = result.question
                 }
                 error = result?.error
             }
             // работа с найденным вопросом
-            if (key) {
-                let question = await db.get('questions', key)
+            if (question) {
                 const answerHash = objectHash(message.question.answers.answers)
                 if (!searchedOnServer && !question.answers[answerHash]) {
                     const result = await getAnswersByQuestionFromServer(message.question.question)
                     if (result?.question) {
-                        key = result.question._id
                         question = result.question
                     }
                     error = result?.error
@@ -944,7 +942,6 @@ chrome.runtime.onConnect.addListener((port) => {
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
                         const result = await getAnswersByQuestionFromServer(message.question.question)
                         if (result?.question) {
-                            key = result.question._id
                             question = result.question
                         }
                         error = result?.error
@@ -1005,7 +1002,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 await db.put('questions', question)
             // добавление вопроса с его вариантами ответов
             } else {
-                const question = message.question
+                question = message.question
                 const multi = question.answers.type.toLowerCase().includes('несколько')
                 question.answers.combinations = getCombinations(Array.from(question.answers.answers.keys()), multi)
                 const combination = question.answers.combinations[Math.floor(Math.random()*question.answers.combinations.length)]
@@ -1038,24 +1035,18 @@ chrome.runtime.onConnect.addListener((port) => {
             lastScore = message.lastScore
 
             for (const resultQuestion of message.results) {
-                let key = await db.getKeyFromIndex('questions', 'question', resultQuestion.question)
-                // if (!key) {
-                //     const result = await getAnswersByQuestionFromServer(resultQuestion.question)
-                //     if (result?.question) {
-                //         key = result.question._id
-                //     }
-                // }
+                let question = await db.getFromIndex('questions', 'question', resultQuestion.question)
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
-                if (!key) {
+                if (!question) {
                     if (resultQuestion.correct) {
-                        const correctQuestion = {
+                        question = {
                             question: resultQuestion.question,
                             answers: {},
                             topics: [topic._id],
                             correctAnswers: {'unknown': resultQuestion.answers.answers}
                         }
-                        key = await db.put('questions', correctQuestion)
-                        console.log('записан новый ответ с новым вопросом', correctQuestion)
+                        question._id = await db.put('questions', question)
+                        console.log('записан новый ответ с новым вопросом', question)
                         stats.correct++
                     } else {
                         console.log('пропущено', resultQuestion)
@@ -1063,7 +1054,6 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                 // сохраняем правильный ответ или учитываем не правильный ответ
                 } else {
-                    const question = await db.get('questions', key)
                     let changedCombinations = false
                     let changedAnswers = false
                     let changedOther = false
