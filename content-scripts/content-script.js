@@ -61,7 +61,10 @@ async function portListener(message) {
             highlightAnswers()
         }
     } else if (message.stats) {
-        statusDiv.innerText = `Статистка учтённых ответов:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
+        if (message.error) {
+            errorDiv.innerText = message.error
+        }
+        statusDiv.innerText = 'Статистка учтённых ответов' + (message.error || settings.offlineMode || !settings.sendResults || !message.stats?.isServer ? ' (локально)' : '') + `:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
     } else {
         console.warn('Не соответствие сообщения, возможно в процесс вмешался пользователь', message, cachedMessage.question.question)
         return
@@ -541,7 +544,7 @@ function sendResults() {
             question: normalizeText(el.querySelector('.questionList-item-content-title').textContent),
             answers: {
                 type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
-                answers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText(item.textContent)).sort()
+                usedAnswers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText(item.textContent)).sort()
             },
             correct: Boolean(el.querySelector('[svgicon="correct"]')),
             lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
@@ -798,7 +801,7 @@ function highlightAnswers(remove) {
     if (cachedMessage.correct) {
         statusDiv.innerText = 'Подсвечены правильные ответы'
     } else {
-        statusDiv.innerText = 'В ' + (cachedMessage.error ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedMessage.question?.answers[cachedMessage.answerHash].combinations.length
+        statusDiv.innerText = 'В ' + (cachedMessage.error || settings.offlineMode ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedMessage.question?.answers[cachedMessage.answerHash].combinations.length
     }
     if (cachedMessage.error) {
         errorDiv.innerText = cachedMessage.error

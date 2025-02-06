@@ -15,6 +15,20 @@
 </div>
 <div class="main" style="display: none">
     <header>
+        <div class="export-import">
+            <label for="importdb">
+                <img src="/img/import2.svg" alt="import">
+                <div>Импорт БД</div>
+                <span class="status"></span>
+            </label>
+            <input id="importdb">
+            <label for="exportdb">
+                <img src="/img/export.svg" alt="export">
+                <div>Экспорт БД</div>
+                <span class="status"></span>
+            </label>
+            <input id="exportdb">
+        </div>
         <h1 class="nav-head">
             <img src="../img/settings.svg" alt="">
             <div>Режим работы</div>
@@ -92,17 +106,22 @@
                 <label for="SelectionMethod"></label>
                 <div class="label">Решать тест методом подбора если нет ответов</div>
             </div>
-            <div class="toggle-pill-color" style="display: none">
+            <div class="toggle-pill-color">
                 <input type="checkbox" id="GoodScore" name="GoodScore">
                 <label for="GoodScore"></label>
                 <div class="label">Решать тест минимум на 5-ку (методом подбора)</div>
             </div>
         </div>
-        <div class="block active" data-block="manual semi-auto auto" style="display: none">
-            <div class="toggle-pill-color" style="display: none">
+        <div class="block active" data-block="manual semi-auto auto">
+            <div class="toggle-pill-color">
+                <input type="checkbox" id="SendResults" name="SendResults">
+                <label for="SendResults"></label>
+                <div class="label">Отправлять данные об ответах на сервер разработчика</div>
+            </div>
+            <div class="toggle-pill-color">
                 <input type="checkbox" id="OfflineMode" name="OfflineMode">
                 <label for="OfflineMode"></label>
-                <div class="label">Не искать ответы на сервере</div>
+                <div class="label">Не искать ответы на сервере разработчика (офлайн режим, использовать только локальную бд)</div>
             </div>
         </div>
         <div class="block" data-block="auto">

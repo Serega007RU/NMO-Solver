@@ -5,7 +5,7 @@ document.querySelector('#version').textContent = 'Версия ' + chrome.runtim
 
 let db, settings
 async function init() {
-    db = await idb.openDB('nmo', 16)
+    db = await idb.openDB('nmo', 17)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -119,8 +119,23 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     })
     document.querySelector('#OfflineMode').addEventListener('change', (event) => {
         settings.offlineMode = event.target.checked
+        if (settings.offlineMode) document.querySelector('.export-import').removeAttribute('style')
+        else document.querySelector('.export-import').style.display = 'none'
         onChangedSettings()
     })
+    document.querySelector('#SendResults').addEventListener('change', (event) => {
+        if (!event.target.checked) {
+            if (!confirm('Отправка ответов позволяет пополнять общую базу (на сервере) новыми ответами, отказываясь от отправки ответов вы отказываетесь от помощи другим врачам (коллегам) которым тоже может понадобиться ответы на новые тесты. В данную отправку не включаются конфиденциальные данные, только сведения о тесте, его вопросах (названия) и ответах. Вы действительно хотите отключить отправку ответов на сервер?')) {
+                event.target.checked = !event.target.checked
+                return
+            }
+        }
+        settings.sendResults = event.target.checked
+        onChangedSettings()
+    })
+
+    document.querySelector('#importdb').addEventListener('click', reimportDB)
+    document.querySelector('#exportdb').addEventListener('click', exportDB)
 
     // это просто один большой сплошной костыль заставляющий подобие нашего textarea работать с текстом без форматирования
     document.querySelector('.topics').addEventListener('paste', (event) => {
@@ -310,17 +325,15 @@ async function restoreOptions() {
     document.querySelector('#MaxReloadTab').value = settings.maxReloadTab
     document.querySelector('#MaxReloadTest').value = settings.maxReloadTest
     document.querySelector('#GoodScore').checked = settings.goodScore
-    if (settings.goodScore) document.querySelector('#GoodScore').parentElement.removeAttribute('style')
     document.querySelector('#SelectionMethod').checked = settings.selectionMethod
     document.querySelector('#TimeoutReloadTabMin').value = settings.timeoutReloadTabMin / 1000
     document.querySelector('#TimeoutReloadTabMin').max = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').value = settings.timeoutReloadTabMax / 1000
     document.querySelector('#TimeoutReloadTabMax').min = settings.timeoutReloadTabMin / 1000
     document.querySelector('#OfflineMode').checked = settings.offlineMode
-    if (settings.offlineMode) {
-        document.querySelector('#OfflineMode').parentElement.removeAttribute('style')
-        document.querySelector('#OfflineMode').parentElement.parentElement.removeAttribute('style')
-    }
+    if (settings.offlineMode) document.querySelector('.export-import').removeAttribute('style')
+    else document.querySelector('.export-import').style.display = 'none'
+    document.querySelector('#SendResults').checked = settings.sendResults
 
     await restoreTopics()
 }
@@ -544,74 +557,118 @@ function makeStar() {
 }
 
 
-async function reimportDB() {
-    const result = await showOpenFilePicker({types: [{accept: {'application/json': '.json'}}]})
-    console.log('Считываем указанный файл...')
-    const file = await result[0].getFile()
-    const data = await new Response(file).json()
+async function reimportDB(event) {
+    const target = event?.target || document.querySelector('#importdb')
+    if (target.disabled) return
+    target.disabled = true
+    const status = target.parentElement.querySelector('.status')
+    let hasError = false
+    try {
+        const result = await showOpenFilePicker({types: [{accept: {'application/json': '.json'}}]})
+        setStatus('Считываем указанный файл...')
+        const file = await result[0].getFile()
+        const data = await new Response(file).json()
 
-    const transaction = db.transaction(['questions', 'topics'], 'readwrite')
-    const questionsStore = transaction.objectStore('questions')
-    const topicsStore = transaction.objectStore('topics')
+        const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+        const questionsStore = transaction.objectStore('questions')
+        const topicsStore = transaction.objectStore('topics')
 
-    console.log('Очищаем бд...')
-    await questionsStore.clear()
-    await topicsStore.clear()
+        setStatus('Очищаем бд...')
+        await questionsStore.clear()
+        await topicsStore.clear()
 
-    const promises = []
-    let progress = 0
-    let lastShow
-    let maxProgress = (data.questions.length + data.topics.length) * 2
-    function onComplete() {
-        progress++
-        if (!lastShow || Date.now() - lastShow >= 500) {
-            const percent = ((Math.floor((100 * progress / maxProgress) * 10) / 10) || 0).toFixed(1)
-            console.log('Прогресс ' + percent + '%   ' + ((progress / 2) | 0).toLocaleString('ru') + ' / ' + ((maxProgress / 2) | 0).toLocaleString('ru'))
-            lastShow = Date.now()
+        const promises = []
+        let progress = 0
+        let lastShow
+        let maxProgress = (data.questions.length + data.topics.length) * 2
+        function onComplete() {
+            if (hasError) return
+            progress++
+            if (!lastShow || Date.now() - lastShow >= 500) {
+                const percent = ((Math.floor((100 * progress / maxProgress) * 10) / 10) || 0).toFixed(1)
+                setStatus('Прогресс ' + percent + '%   ' + ((progress / 2) | 0).toLocaleString('ru') + ' / ' + ((maxProgress / 2) | 0).toLocaleString('ru'))
+                lastShow = Date.now()
+            }
         }
-    }
 
-    console.log('Заносим в базу темы...')
-    for (const topic of data.topics) {
-        const promise = topicsStore.put(topic)
-        promises.push(promise)
-        promise.finally(onComplete)
+        setStatus('Заносим в базу темы...')
+        for (const topic of data.topics) {
+            const promise = topicsStore.put(topic)
+            promises.push(promise)
+            promise.finally(onComplete)
+            onComplete()
+            // TODO таким вот тупорылым костылём мы избавляемся от провисания
+            if (progress % 10000 === 0) {
+                await topicsStore.get(0)
+            }
+        }
+
+        setStatus('Заносим в базу вопросы...')
+        for (const question of data.questions) {
+            const promise = questionsStore.add(question)
+            promises.push(promise)
+            promise.finally(onComplete)
+            onComplete()
+            // TODO таким вот тупорылым костылём мы избавляемся от провисания
+            if (progress % 10000 === 0) {
+                await questionsStore.get(0)
+            }
+        }
+        setStatus('Ожидаем когда в бд всё будет занесено')
+
+        await Promise.all(promises)
+
+        lastShow = null
         onComplete()
+        setStatus('готово')
+    } catch (error) {
+        console.error(error)
+        hasError = true
+        status.textContent = error.message
+    } finally {
+        target.disabled = false
     }
 
-    console.log('Заносим в базу вопросы...')
-    for (const question of data.questions) {
-        const promise = questionsStore.add(question)
-        promises.push(promise)
-        promise.finally(onComplete)
-        onComplete()
+    function setStatus(text) {
+        status.textContent = text
+        console.log(text)
     }
-
-    await Promise.all(promises)
-
-    lastShow = null
-    onComplete()
-    console.log('готово')
 }
 self.reimportDB = reimportDB
 
-async function exportDB() {
-    console.log('Экспортирование дб...')
-    console.log('Экспорт questions...')
-    const questions = await db.getAll('questions')
-    console.log('Экспорт topics...')
-    const topics = await db.getAll('topics')
-    console.log('Преобразование в json...')
-    const text = JSON.stringify({questions, topics})
-    const blob = new Blob([text],{type: 'text/json;charset=UTF-8;'})
-    const anchor = document.createElement('a')
+async function exportDB(event) {
+    const target = event?.target || document.querySelector('#importdb')
+    if (target.disabled) return
+    target.disabled = true
+    const status = target.parentElement.querySelector('.status')
+    try {
+        setStatus('Экспортирование дб...')
+        setStatus('Экспорт questions...')
+        const questions = await db.getAll('questions')
+        setStatus('Экспорт topics...')
+        const topics = await db.getAll('topics')
+        setStatus('Преобразование в json...')
+        const text = JSON.stringify({questions, topics})
+        const blob = new Blob([text],{type: 'text/json;charset=UTF-8;'})
+        const anchor = document.createElement('a')
 
-    anchor.download = 'nmo_db.json'
-    anchor.href = (window.webkitURL || window.URL).createObjectURL(blob)
-    anchor.dataset.downloadurl = ['text/json;charset=UTF-8;', anchor.download, anchor.href].join(':')
-    console.log('Скачивание...')
-    anchor.click()
-    console.log('Готово')
+        anchor.download = 'nmo_db.json'
+        anchor.href = (window.webkitURL || window.URL).createObjectURL(blob)
+        anchor.dataset.downloadurl = ['text/json;charset=UTF-8;', anchor.download, anchor.href].join(':')
+        setStatus('Скачивание...')
+        anchor.click()
+        setStatus('Готово')
+    } catch (error) {
+        console.error(error)
+        status.textContent = error.message
+    } finally {
+        target.disabled = false
+    }
+
+    function setStatus(text) {
+        status.textContent = text
+        console.log(text)
+    }
 }
 self.exportDB = exportDB
 

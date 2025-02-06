@@ -20,7 +20,7 @@ let lastScore
 
 class TopicError extends Error {}
 
-const dbVersion = 16
+const dbVersion = 17
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -95,6 +95,12 @@ async function init() {
             settings.selectionMethod = true
             settings.offlineMode = false
             settings.goodScore = false
+            await transaction.objectStore('other').put(settings, 'settings')
+        }
+
+        if (oldVersion <= 16) {
+            settings = await transaction.objectStore('other').get('settings')
+            settings.sendResults = true
             await transaction.objectStore('other').put(settings, 'settings')
         }
 
@@ -1027,12 +1033,14 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (result.topic) {
                     topic = result.topic
                 } else if (!topic && !result.topic) {
-                    topic = {name: message.question.topics[0]}
+                    topic = {name: message.topic}
                     topic._id = await db.put('topics', topic)
-                    console.log('Внесена новая тема в базу', message.question.topics[0])
+                    console.log('Внесена новая тема в базу', message.topic)
                 }
             }
             lastScore = message.lastScore
+
+            const toSendResults = []
 
             for (const resultQuestion of message.results) {
                 let question = await db.getFromIndex('questions', 'question', resultQuestion.question)
@@ -1043,7 +1051,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             question: resultQuestion.question,
                             answers: {},
                             topics: [topic._id],
-                            correctAnswers: {'unknown': resultQuestion.answers.answers}
+                            correctAnswers: {'unknown': resultQuestion.answers.usedAnswers}
                         }
                         question._id = await db.put('questions', question)
                         console.log('записан новый ответ с новым вопросом', question)
@@ -1060,7 +1068,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     let notAnswered = false
                     const foundAnswerHash = question.lastOrder?.[resultQuestion.lastOrder]
                     // если ответ правильный, сохраняем правильные ответы, и удаляем combinations находя по ответам нужный вариант ответов
-                    if (resultQuestion.answers.answers?.length && resultQuestion.correct) {
+                    if (resultQuestion.answers.usedAnswers?.length && resultQuestion.correct) {
                         const searchAnswers = foundAnswerHash ? [foundAnswerHash] : Object.keys(question.answers)
                         const matchAnswers = []
                         for (const answerHash of searchAnswers) {
@@ -1069,7 +1077,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 wrongVariant = true
                             }
 
-                            for (const answer of resultQuestion.answers.answers) {
+                            for (const answer of resultQuestion.answers.usedAnswers) {
                                 if (wrongVariant) break
                                 if (!question.answers[answerHash].answers.includes(answer)) {
                                     wrongVariant = true
@@ -1092,22 +1100,22 @@ chrome.runtime.onConnect.addListener((port) => {
                         } else if (!matchAnswers.length) {
                             const oldAnswers = JSON.stringify(question.correctAnswers['unknown'])
                             if (!question.correctAnswers['unknown']) question.correctAnswers['unknown'] = []
-                            question.correctAnswers['unknown'] = Array.from(new Set(question.correctAnswers['unknown'].concat(resultQuestion.answers.answers)))
+                            question.correctAnswers['unknown'] = Array.from(new Set(question.correctAnswers['unknown'].concat(resultQuestion.answers.usedAnswers)))
                             changedAnswers = oldAnswers !== JSON.stringify(question.correctAnswers)
                             if (changedAnswers) stats.taken++
                         } else {
                             let fakeCorrectAnswers = false
                             if (question.correctAnswers[matchAnswers[0]]) {
-                                if (JSON.stringify(question.correctAnswers[matchAnswers[0]]) !== JSON.stringify(resultQuestion.answers.answers)) {
+                                if (JSON.stringify(question.correctAnswers[matchAnswers[0]]) !== JSON.stringify(resultQuestion.answers.usedAnswers)) {
                                     if (!question.answers[matchAnswers[0]].fakeCorrectAnswers) {
                                         fakeCorrectAnswers = true
                                         changedCombinations = true
                                         question.answers[matchAnswers[0]].fakeCorrectAnswers = true
-                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Возможно это сбой какой-то', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.answers))
+                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Возможно это сбой какой-то', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
                                     } else {
-                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Были перезаписаны правильные ответы', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.answers))
+                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Были перезаписаны правильные ответы', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
                                         changedAnswers = true
-                                        question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.answers
+                                        question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.usedAnswers
                                     }
                                     stats.taken++
                                 } else {
@@ -1115,7 +1123,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 }
                             } else {
                                 changedAnswers = true
-                                question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.answers
+                                question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.usedAnswers
                                 stats.correct++
                             }
                             if (question.answers[matchAnswers[0]].combinations) {
@@ -1123,7 +1131,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 delete question.answers[matchAnswers[0]].combinations
                             }
                             if (question.correctAnswers['unknown']) {
-                                for (const answer of resultQuestion.answers.answers) {
+                                for (const answer of resultQuestion.answers.usedAnswers) {
                                     const index = question.correctAnswers['unknown'].indexOf(answer)
                                     if (index !== -1) {
                                         changedAnswers = true
@@ -1141,13 +1149,13 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                         }
                     // если ответ не правильный, удаляем ту комбинацию (combination) которую мы использовали при подборе ответа
-                    } else if (resultQuestion.answers.answers?.length) {
+                    } else if (resultQuestion.answers.usedAnswers?.length) {
                         const searchAnswers = foundAnswerHash ? [foundAnswerHash] : Object.keys(question.answers)
                         let fakeCorrectAnswers = false
                         // если у нас есть правильный ответ, но мы получили что этот ответ НЕ правильный, то значит у нас в бд неверные данные, удаляем ответ и генерируем комбинации для подбора ответа
                         if (question.correctAnswers[foundAnswerHash]) {
-                            if (JSON.stringify(question.correctAnswers[foundAnswerHash]) !== JSON.stringify(resultQuestion.answers.answers)) {
-                                console.warn('На вопрос были даны НЕ правильные ответы не смотря на то что в бд есть ПРАВИЛЬНЫЕ ответы', JSON.stringify(question.correctAnswers[foundAnswerHash]), JSON.stringify(resultQuestion.answers.answers), question)
+                            if (JSON.stringify(question.correctAnswers[foundAnswerHash]) !== JSON.stringify(resultQuestion.answers.usedAnswers)) {
+                                console.warn('На вопрос были даны НЕ правильные ответы не смотря на то что в бд есть ПРАВИЛЬНЫЕ ответы', JSON.stringify(question.correctAnswers[foundAnswerHash]), JSON.stringify(resultQuestion.answers.usedAnswers), question)
                             } else {
                                 // TODO иногда какого-то хрена правильные ответы выдаются как неверные, мы пробуем костылём во второй раз ответить
                                 //  но если и во второй раз не прокатит то удаляем правилные ответы и пробуем методом подбора подобрать правильные ответы
@@ -1181,7 +1189,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
 
                             let indexes = []
-                            for (const answer of resultQuestion.answers.answers) {
+                            for (const answer of resultQuestion.answers.usedAnswers) {
                                 if (wrongVariant) break
                                 const index = question.answers[answerHash].answers.indexOf(answer)
                                 if (index === -1) {
@@ -1223,6 +1231,19 @@ chrome.runtime.onConnect.addListener((port) => {
                         stats.ignored++
                     }
                     if (foundAnswerHash) {
+                        if (!notAnswered && !settings.offlineMode && settings.sendResults) {
+                            const toSendQuestion = {
+                                question: question.question,
+                                answers: {
+                                    answers: question.answers[foundAnswerHash].answers,
+                                    type: question.answers[foundAnswerHash].type,
+                                    usedAnswers: question.answers[foundAnswerHash].lastUsedAnswers || resultQuestion.answers.usedAnswers
+                                },
+                                correct: resultQuestion.correct
+                            }
+                            toSendResults.push(toSendQuestion)
+                        }
+
                         changedOther = true
                         delete question.lastOrder?.[resultQuestion.lastOrder]
                         if (!notAnswered) delete question.answers[foundAnswerHash].lastUsedAnswers
@@ -1243,7 +1264,19 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                 }
             }
-            port?.postMessage({stats})
+
+            let error
+            if (toSendResults.length) {
+                const result = await sendResultsToServer(toSendResults, topic.name)
+                if (result?.stats) {
+                    stats = result.stats
+                    stats.isServer = true
+                } else if (result?.error) {
+                    error = result.error
+                }
+            }
+
+            port?.postMessage({stats, error})
         } else if (message.running != null || message.collectAnswers != null) {
             if (message.running || message.collectAnswers) {
                 if (message.collectAnswers) collectAnswers = message.collectAnswers
@@ -1334,6 +1367,24 @@ function getCombinations(items, multi) {
     return combinations
 }
 
+async function sendResultsToServer(results, topic) {
+    if (settings.offlineMode || !settings.sendResults) return
+    try {
+        const response = await fetch('https://serega007.ru/saveResults', {
+            headers: {'Content-Type': 'application/json'},
+            method: 'POST',
+            body: JSON.stringify({results, topic}),
+            signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+        })
+        // noinspection UnnecessaryLocalVariableJS
+        const json = await response.json()
+        return json
+    } catch (error) {
+        console.error(error)
+        return {error: 'Не удалось связаться с сервером ответов'}
+    }
+}
+
 async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
@@ -1396,6 +1447,18 @@ async function joinQuestion(newQuestion) {
         if (!question.correctAnswers[answersHash] && newQuestion.correctAnswers[answersHash]) {
             changedAnswers = true
             question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
+            delete question.answers[answersHash].combinations
+        }
+        if (newQuestion.answers[answersHash].combinations && !question.correctAnswers[answersHash]) {
+            if (!question.answers[answersHash].combinations?.length) {
+                question.answers[answersHash].combinations = newQuestion.answers[answersHash].combinations
+            } else {
+                question.answers[answersHash].combinations = question.answers[answersHash].combinations.filter(subArray =>
+                    newQuestion.answers[answersHash].combinations.some(refArray =>
+                        refArray.length === subArray.length && refArray.every((val, index) => val === subArray[index])
+                    )
+                )
+            }
         }
     }
 
