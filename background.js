@@ -61,7 +61,8 @@ async function init() {
                 selectionMethod: true,
                 timeoutReloadTabMin: 15000,
                 timeoutReloadTabMax: 90000,
-                offlineMode: false
+                offlineMode: false,
+                sendResults: true
             }, 'settings')
             return
         }
