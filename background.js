@@ -949,15 +949,23 @@ chrome.runtime.onConnect.addListener((port) => {
                 } else {
                     if (!question.lastOrder) question.lastOrder = {}
                     question.lastOrder[message.question.lastOrder] = answerHash
-                    if (!question.answers[answerHash].type && message.question.answers.type) {
-                        question.answers[answerHash].type = message.question.answers.type
-                    }
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
                         const result = await getAnswersByQuestionFromServer(message.question.question)
                         if (result?.question) {
                             question = result.question
                         }
                         error = result?.error
+                    }
+                    if (!question.answers[answerHash].type && message.question.answers.type) {
+                        question.answers[answerHash].type = message.question.answers.type
+                    } else if (question.answers[answerHash].type && message.question.answers.type && question.answers[answerHash].type.toLowerCase().includes('несколько') !== message.question.answers.type.toLowerCase().includes('несколько')) {
+                        question.answers[answerHash].type = message.question.answers.type
+                        if (question.correctAnswers[answerHash]?.length > 1) {
+                            console.warn('Тип вопроса не соответствует с тем что было в бд, возможно портал изменил ответ, правильные ответы были удалены (заново сгенерированы комбинации)')
+                            delete question.correctAnswers[answerHash]
+                            const multi = question.answers[answerHash].type?.toLowerCase()?.includes('несколько')
+                            question.answers[answerHash].combinations = getCombinations(Array.from(question.answers[answerHash].answers.keys()), multi)
+                        }
                     }
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
@@ -1450,7 +1458,7 @@ async function joinQuestion(newQuestion) {
 
     let changed, changedAnswers
     for (const answersHash of Object.keys(newQuestion.answers)) {
-        if (!question.answers[answersHash] || (!question.answers[answersHash].type && newQuestion.answers[answersHash].type)) {
+        if (!question.answers[answersHash]) {
             changed = true
             question.answers[answersHash] = newQuestion.answers[answersHash]
         }
