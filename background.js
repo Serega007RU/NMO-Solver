@@ -1261,7 +1261,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 answers: {
                                     answers: question.answers[foundAnswerHash].answers,
                                     type: question.answers[foundAnswerHash].type,
-                                    usedAnswers: question.answers[foundAnswerHash].lastUsedAnswers || resultQuestion.answers.usedAnswers
+                                    usedAnswers: resultQuestion.answers.usedAnswers
                                 },
                                 correct: resultQuestion.correct
                             }
