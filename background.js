@@ -624,7 +624,6 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         searchQuery = educationalElement.name
         console.log('ищем', educationalElement)
         if (educationalElement.dirty && educationalElement.name) {
-            // TODO следует учесть элементы без name (если задан чисто id)
             const result = await getAnswersByTopicFromServer(educationalElement.name)
             if (result.topic) {
                 educationalElement = result.topic
@@ -649,6 +648,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
             // TODO у нас проблема с id, в разных кабинетах разные id тем с одинаковым названием
             console.warn('Не удалось найти элемент по id, возможно тут конфликт с id')
             delete educationalElement.id
+            delete educationalElement.code
             await db.put('topics', educationalElement)
             await searchEducationalElement(educationalElement, cut, inputName)
             return
@@ -747,6 +747,10 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
             }
         }
     }
+    // на случай если поиск был по id
+    if (!(educationalElement.dirty && educationalElement.id && !educationalElement.name)) {
+        delete educationalElement.dirty
+    }
     if (educationalElement.id !== foundEE.id) {
         educationalElement.id = foundEE.id
     }
@@ -756,7 +760,6 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     if (educationalElement.code !== foundEE.number) {
         educationalElement.code = foundEE.number
     }
-    delete educationalElement.dirty
     // educationalElement.completed = completed
     // educationalElement.status = status
     await db.put('topics', educationalElement)
@@ -877,10 +880,13 @@ chrome.runtime.onConnect.addListener((port) => {
                 error = result.error
                 if (result.topic) {
                     topic = result.topic
-                } else if (!topic && !result.topic) {
+                } else if (!topic) {
                     topic = {name: message.question.topics[0]}
                     topic._id = await db.put('topics', topic)
                     console.log('Внесена новая тема в базу', message.question.topics[0])
+                } else if (topic.dirty && !result.error) {
+                    delete topic.dirty
+                    await db.put('topics', topic)
                 }
             }
             let question = await db.getFromIndex('questions', 'question', message.question.question)
@@ -1033,10 +1039,13 @@ chrome.runtime.onConnect.addListener((port) => {
                 const result = await getAnswersByTopicFromServer(message.topic)
                 if (result.topic) {
                     topic = result.topic
-                } else if (!topic && !result.topic) {
+                } else if (!topic) {
                     topic = {name: message.topic}
                     topic._id = await db.put('topics', topic)
                     console.log('Внесена новая тема в базу', message.topic)
+                } else if (topic.dirty && !result.error) {
+                    delete topic.dirty
+                    await db.put('topics', topic)
                 }
             }
             lastScore = message.lastScore
@@ -1418,7 +1427,7 @@ async function getAnswersByTopicFromServer(topicName) {
             })
             const json = await response.json()
             if (json) {
-                topic = await putNewTopic(json.topic)
+                topic = await putNewTopic(json.topic, null, true)
                 for (const question of json.questions) {
                     await joinQuestion(question)
                 }

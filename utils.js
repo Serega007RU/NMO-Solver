@@ -67,8 +67,7 @@ async function toggleRuleSet() {
 }
 self.toggleRuleSet = toggleRuleSet
 
-async function putNewTopic(newTopic, topicsStore) {
-    delete newTopic.dirty
+async function putNewTopic(newTopic, topicsStore, removeDirty) {
     if (!topicsStore) topicsStore = db.transaction('topics', 'readwrite').store
     let topic, changed
     if (newTopic.id) {
@@ -84,12 +83,16 @@ async function putNewTopic(newTopic, topicsStore) {
         newTopic._id = await topicsStore.put(newTopic)
         return newTopic
     }
+    if (removeDirty && topic.dirty) {
+        changed = true
+        delete topic.dirty
+    }
     if (newTopic.id && topic.id !== newTopic.id) {
         changed = true
         topic.id = newTopic.id
         const oldTopic = await topicsStore.index('id').get(topic.id)
         if (oldTopic && oldTopic._id !== topic._id) {
-            topic = joinTopics(topic, oldTopic)
+            topic = joinTopics(topic, oldTopic, removeDirty)
             await topicsStore.delete(oldTopic._id)
             console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
         }
@@ -99,7 +102,7 @@ async function putNewTopic(newTopic, topicsStore) {
         topic.code = newTopic.code
         const oldTopic = await topicsStore.index('code').get(topic.code)
         if (oldTopic && oldTopic._id !== topic._id) {
-            topic = joinTopics(topic, oldTopic)
+            topic = joinTopics(topic, oldTopic, removeDirty)
             await topicsStore.delete(oldTopic._id)
             console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
         }
@@ -109,7 +112,7 @@ async function putNewTopic(newTopic, topicsStore) {
         topic.name = newTopic.name
         const oldTopic = await topicsStore.index('name').get(topic.name)
         if (oldTopic && oldTopic._id !== topic._id) {
-            topic = joinTopics(topic, oldTopic)
+            topic = joinTopics(topic, oldTopic, removeDirty)
             await topicsStore.delete(oldTopic._id)
             console.warn('Удалён дублирующий topic', JSON.stringify(oldTopic))
         }
@@ -138,9 +141,11 @@ async function putNewTopic(newTopic, topicsStore) {
 }
 self.putNewTopic = putNewTopic
 
-function joinTopics(oldTopic, newTopic) {
-    delete oldTopic.dirty
-    delete newTopic.dirty
+function joinTopics(oldTopic, newTopic, removeDirty) {
+    if (removeDirty) {
+        delete oldTopic.dirty
+        delete newTopic.dirty
+    }
     if (!oldTopic.id && newTopic.id) {
         oldTopic.id = newTopic.id
     }

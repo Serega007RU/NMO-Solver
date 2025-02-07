@@ -163,7 +163,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         for (const [index, li] of Array.from(elTopics.children).entries()) {
             li.removeAttribute('style')
             li.removeAttribute('id')
-            // li.removeAttribute('data-before')
+            // li.setAttribute('data-before', '')
             li.removeAttribute('data-tooltip')
             while (li.firstElementChild?.tagName === 'BR') {
                 li.firstElementChild.remove()
@@ -196,7 +196,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
                 if (!savedCursor) savedCursor = getCursorIndex(elTopics)
                 li.innerHTML = li.innerText
             }
-            if (!li.innerText) li.removeAttribute('data-before')
+            if (!li.innerText) li.setAttribute('data-before', '')
             maxWidth = Math.max(li.clientWidth, maxWidth)
         }
 
@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         if (topic.completed) {
             topic.completed = 0
             delete topic.error
-            event.target.removeAttribute('data-before')
+            event.target.setAttribute('data-before', '')
             event.target.removeAttribute('data-tooltip')
             await db.put('topics', topic)
         }
@@ -418,7 +418,7 @@ function updateTopic(topic, element) {
     } else if (topic.completed === 2) {
         element.setAttribute('data-before', '❌')
     } else {
-        element.removeAttribute('data-before')
+        element.setAttribute('data-before', '')
     }
     if (topic.error) {
         element.setAttribute('data-tooltip', topic.error)
@@ -436,7 +436,7 @@ async function updateTopics(elTopics, skipTimer) {
         topicsTimer = setTimeout(() => {
             topicsFunc = updateTopics(elTopics, true)
             topicsFunc.finally(() => topicsFunc.done = true)
-        }, 1000)
+        }, 250)
         return
     }
     if (topicsFunc && !topicsFunc.done) {
