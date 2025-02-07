@@ -1125,10 +1125,13 @@ chrome.runtime.onConnect.addListener((port) => {
                             let fakeCorrectAnswers = false
                             if (question.correctAnswers[matchAnswers[0]]) {
                                 if (JSON.stringify(question.correctAnswers[matchAnswers[0]]) !== JSON.stringify(resultQuestion.answers.usedAnswers)) {
-                                    if (!question.answers[matchAnswers[0]].fakeCorrectAnswers) {
+                                    if (!question.answers[matchAnswers[0]].fakeCorrectAnswers || question.answers[matchAnswers[0]].fakeCorrectAnswers <= 0) {
                                         fakeCorrectAnswers = true
                                         changedCombinations = true
-                                        question.answers[matchAnswers[0]].fakeCorrectAnswers = true
+                                        if (!question.answers[matchAnswers[0]].fakeCorrectAnswers || question.answers[matchAnswers[0]].fakeCorrectAnswers === true) {
+                                            question.answers[matchAnswers[0]].fakeCorrectAnswers = 0
+                                        }
+                                        question.answers[matchAnswers[0]].fakeCorrectAnswers++
                                         console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Возможно это сбой какой-то', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
                                     } else {
                                         console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Были перезаписаны правильные ответы', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
@@ -1177,11 +1180,14 @@ chrome.runtime.onConnect.addListener((port) => {
                             } else {
                                 // TODO иногда какого-то хрена правильные ответы выдаются как неверные, мы пробуем костылём во второй раз ответить
                                 //  но если и во второй раз не прокатит то удаляем правилные ответы и пробуем методом подбора подобрать правильные ответы
-                                if (!question.answers[foundAnswerHash].fakeCorrectAnswers) {
+                                if (!question.answers[foundAnswerHash].fakeCorrectAnswers || question.answers[foundAnswerHash].fakeCorrectAnswers <= 0) {
                                     console.warn('Пока какой-то причине НМО посчитал правильные ответы НЕ правильными, возможно это сбой какой-то', question, resultQuestion)
                                     changedCombinations = true
                                     fakeCorrectAnswers = true
-                                    question.answers[foundAnswerHash].fakeCorrectAnswers = true
+                                    if (!question.answers[foundAnswerHash].fakeCorrectAnswers || question.answers[foundAnswerHash].fakeCorrectAnswers === true) {
+                                        question.answers[foundAnswerHash].fakeCorrectAnswers = 0
+                                    }
+                                    question.answers[foundAnswerHash].fakeCorrectAnswers++
                                 } else {
                                     console.warn('Похоже что правильные ответы на самом деле НЕ правильные (правильный ответ удалён, заново сгенерированы комбинации)')
                                     changedAnswers = true
