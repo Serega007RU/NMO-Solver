@@ -137,10 +137,10 @@ async function resetOptionalVariables() {
             delete question.lastOrder
         }
         for (const answersHash of Object.keys(question.answers)) {
-            if (question.answers[answersHash].fakeCorrectAnswers) {
-                changed = true
-                delete question.answers[answersHash].fakeCorrectAnswers
-            }
+            // if (question.answers[answersHash].fakeCorrectAnswers) {
+            //     changed = true
+            //     delete question.answers[answersHash].fakeCorrectAnswers
+            // }
             if (question.answers[answersHash].tryedAI) {
                 changed = true
                 delete question.answers[answersHash].tryedAI
@@ -149,10 +149,10 @@ async function resetOptionalVariables() {
                 changed = true
                 delete question.answers[answersHash].lastUsedAnswers
             }
-            if (question.answers[answersHash].combinations) {
-                changed = true
-                delete question.answers[answersHash].combinations
-            }
+            // if (question.answers[answersHash].combinations) {
+            //     changed = true
+            //     delete question.answers[answersHash].combinations
+            // }
         }
         if (changed) {
             await cursor.update(question)
@@ -625,7 +625,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         console.log('ищем', educationalElement)
         if (educationalElement.dirty && educationalElement.name) {
             const result = await getAnswersByTopicFromServer(educationalElement.name)
-            if (result.topic) {
+            if (result?.topic) {
                 educationalElement = result.topic
             }
         }
@@ -877,14 +877,14 @@ chrome.runtime.onConnect.addListener((port) => {
             if (!topic || topic.dirty) {
                 searchedOnServer = true
                 const result = await getAnswersByTopicFromServer(message.question.topics[0])
-                error = result.error
-                if (result.topic) {
+                error = result?.error
+                if (result?.topic) {
                     topic = result.topic
                 } else if (!topic) {
                     topic = {name: message.question.topics[0]}
                     topic._id = await db.put('topics', topic)
                     console.log('Внесена новая тема в базу', message.question.topics[0])
-                } else if (topic.dirty && !result.error) {
+                } else if (topic.dirty && result && !result.error) {
                     delete topic.dirty
                     await db.put('topics', topic)
                 }
@@ -1045,13 +1045,13 @@ chrome.runtime.onConnect.addListener((port) => {
             let topic = await db.getFromIndex('topics', 'name', message.topic)
             if (!topic || topic.dirty) {
                 const result = await getAnswersByTopicFromServer(message.topic)
-                if (result.topic) {
+                if (result?.topic) {
                     topic = result.topic
                 } else if (!topic) {
                     topic = {name: message.topic}
                     topic._id = await db.put('topics', topic)
                     console.log('Внесена новая тема в базу', message.topic)
-                } else if (topic.dirty && !result.error) {
+                } else if (topic.dirty && result && !result.error) {
                     delete topic.dirty
                     await db.put('topics', topic)
                 }
@@ -1394,7 +1394,7 @@ function getCombinations(items, multi) {
 async function sendResultsToServer(results, topic) {
     if (settings.offlineMode || !settings.sendResults) return
     try {
-        const response = await fetch('https://serega007.ru/saveResults', {
+        const response = await fetch('https://serega007.ru/api/v2/saveResults', {
             headers: {'Content-Type': 'application/json'},
             method: 'POST',
             body: JSON.stringify({results, topic}),
@@ -1412,17 +1412,17 @@ async function sendResultsToServer(results, topic) {
 async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/getQuestionByName', {
+        const response = await fetch('https://serega007.ru/api/v2/getQuestionByName', {
             headers: {'Content-Type': 'application/json'},
             method: 'POST',
             body: JSON.stringify({name: question}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
         const json = await response.json()
-        if (json) {
-            const question = await joinQuestion(json)
-            return {question}
+        if (json?.question) {
+            json.question = await joinQuestion(json)
         }
+        return json
     } catch (e) {
         console.error(e)
         return {error: 'Не удалось связаться с сервером ответов'}
@@ -1430,28 +1430,26 @@ async function getAnswersByQuestionFromServer(question) {
 }
 
 async function getAnswersByTopicFromServer(topicName) {
-    let topic, error
+    if (settings.offlineMode) return
     try {
-        if (!settings.offlineMode) {
-            const response = await fetch('https://serega007.ru/getQuestionsByTopic', {
-                headers: {'Content-Type': 'application/json'},
-                method: 'POST',
-                body: JSON.stringify({name: topicName}),
-                signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
-            })
-            const json = await response.json()
-            if (json) {
-                topic = await putNewTopic(json.topic, null, true)
-                for (const question of json.questions) {
-                    await joinQuestion(question)
-                }
+        const response = await fetch('https://serega007.ru/api/v2/getQuestionsByTopic', {
+            headers: {'Content-Type': 'application/json'},
+            method: 'POST',
+            body: JSON.stringify({name: topicName}),
+            signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
+        })
+        const json = await response.json()
+        if (json?.topic && json?.questions) {
+            json.topic = await putNewTopic(json.topic, null, true)
+            for (const question of json.questions) {
+                await joinQuestion(question)
             }
         }
+        return json
     } catch (e) {
-        error = 'Не удалось связаться с сервером ответов'
         console.error(e)
+        return {error: 'Не удалось связаться с сервером ответов'}
     }
-    return {topic, error}
 }
 
 async function joinQuestion(newQuestion) {
