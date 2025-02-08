@@ -561,7 +561,7 @@ async function reimportDB(event) {
     const target = event?.target || document.querySelector('#importdb')
     if (target.disabled) return
     target.disabled = true
-    const status = target.parentElement.querySelector('.status')
+    const status = document.querySelector('[for="importdb"] .status')
     let hasError = false
     try {
         const result = await showOpenFilePicker({types: [{accept: {'application/json': '.json'}}]})
@@ -637,10 +637,10 @@ async function reimportDB(event) {
 self.reimportDB = reimportDB
 
 async function exportDB(event) {
-    const target = event?.target || document.querySelector('#importdb')
+    const target = event?.target || document.querySelector('#exportdb')
     if (target.disabled) return
     target.disabled = true
-    const status = target.parentElement.querySelector('.status')
+    const status = document.querySelector('[for="exportdb"] .status')
     try {
         setStatus('Экспортирование дб...')
         setStatus('Экспорт questions...')
