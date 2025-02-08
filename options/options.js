@@ -163,7 +163,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         for (const [index, li] of Array.from(elTopics.children).entries()) {
             li.removeAttribute('style')
             li.removeAttribute('id')
-            // li.setAttribute('data-before', '')
+            if (li.getAttribute('data-before') == null) li.setAttribute('data-before', '')
             li.removeAttribute('data-tooltip')
             while (li.firstElementChild?.tagName === 'BR') {
                 li.firstElementChild.remove()
