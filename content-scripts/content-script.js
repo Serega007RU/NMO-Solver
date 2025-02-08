@@ -198,6 +198,8 @@ async function nextQuestion() {
             await simulateClick(document.querySelector('.mdc-dialog__surface .mdc-button.mat-primary'))
             // ждём когда пропадёт эта кнопка (типа всё прогрузится)
             await globalObserver.waitFor('.mdc-dialog__surface .mdc-button.mat-primary', {remove: true})
+            // несколько тупой костыль заставляющий перезагрузить страницу если результаты теста не высвечиваются
+            await globalObserver.waitFor('.questionList', {add: true, dontReject: true})
             // runTest()
         } else {
             // const waitNextQuestion = waitForLoadNextQuestion()
@@ -973,9 +975,9 @@ class GlobalSelectorMutationObserver {
 
     rejectAllWait(reason) {
         this.selectors.forEach((resolvers, selector) => {
-            resolvers.forEach(({ reject, timerTimeoutId }) => {
+            resolvers.forEach(({ resolve, reject, options, timerTimeoutId }) => {
                 clearTimeout(timerTimeoutId)
-                reject(reason)
+                options.dontReject ? resolve() : reject(reason)
             })
             this.selectors.delete(selector)
         })
