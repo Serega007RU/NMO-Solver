@@ -1420,7 +1420,7 @@ async function getAnswersByQuestionFromServer(question) {
         })
         const json = await response.json()
         if (json?.question) {
-            json.question = await joinQuestion(json)
+            json.question = await joinQuestion(json.question)
         }
         return json
     } catch (e) {
@@ -1466,12 +1466,13 @@ async function joinQuestion(newQuestion) {
             changed = true
             question.answers[answersHash] = newQuestion.answers[answersHash]
         }
-        if (!question.correctAnswers[answersHash] && newQuestion.correctAnswers[answersHash]) {
+        if (newQuestion.correctAnswers[answersHash] && arraysAreDifferent(question.correctAnswers[answersHash], newQuestion.correctAnswers[answersHash])) {
             changedAnswers = true
             question.correctAnswers[answersHash] = newQuestion.correctAnswers[answersHash]
             delete question.answers[answersHash].combinations
         }
         if (newQuestion.answers[answersHash].combinations && !question.correctAnswers[answersHash]) {
+            changed = true
             if (!question.answers[answersHash].combinations?.length) {
                 question.answers[answersHash].combinations = newQuestion.answers[answersHash].combinations
             } else {
@@ -1527,6 +1528,11 @@ function wait(ms) {
             reject('stopped by user')
         }
     })
+}
+
+function arraysAreDifferent(arr1, arr2) {
+    if (arr1?.length !== arr2?.length) return true // Разная длина => массивы разные
+    return arr1.some((val, index) => val !== arr2[index]) // Проверка содержимого
 }
 
 function setReloadTabTimer() {
