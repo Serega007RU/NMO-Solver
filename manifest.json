@@ -21,8 +21,7 @@
 		"unlimitedStorage",
 		"notifications",
 		"declarativeNetRequest",
-		"scripting",
-		"tabs"
+		"scripting"
 	],
 	"host_permissions": [
 		"https://*.edu.rosminzdrav.ru/*"
