@@ -189,8 +189,10 @@ header {
 
 #donate {
 	z-index: 1;
-	left: 0;
-	bottom: 0;
+	left: 12px;
+	bottom: 10px;
+	/* left: 0; */
+	/* bottom: 0; */
 	position: fixed;
 }
 
@@ -213,12 +215,15 @@ header {
 }
 
 #donate .button {
-	font-weight: 600;
+	font-size: 18px;
+	/*font-weight: 600;*/
 	display: inline-block;
-	margin: 20px 20px 10px 10px;
+	/* margin: 20px 20px 10px 10px; */
 	text-decoration: none;
-	background: #c17c1f;
-	background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.4) 100%), linear-gradient(to right, #EDC113FF 0%, #C17C1F 50%, #EDC113FF 100%);
+	/*background: #c17c1f; */
+	/*background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.4) 100%), linear-gradient(to right, #00b486 0%, #00684d 50%, #00b486 100%);*/
+	background: #00684d;
+	background: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.4) 100%), linear-gradient(to right, #00b486 0%, #00684d 50%, #00b486 100%);
 	background-position: 0 0;
 	background-size: 200% 100%;
 	border-radius: 10px;
@@ -247,6 +252,12 @@ header {
 			color: #fff;
 			text-shadow: 0 0 10px #000;
 		}
+	}
+}
+
+@media only screen and (max-width: 500px) {
+	#donate {
+		display: none;
 	}
 }
 

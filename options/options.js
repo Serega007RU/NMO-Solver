@@ -535,26 +535,26 @@ function wait(ms) {
 
 /*Звезды на кнопке доната*/
 // const fadeInt = setInterval(makeStar, 1500)
-function makeStar() {
-    const newstar = document.createElement('div')
-    newstar.style.backgroundColor = '#fff'
-    newstar.style.borderRadius = '50%'
-    newstar.style.position = 'absolute'
-    newstar.style.top = Math.random()*100 + '%'
-    newstar.style.left = Math.random()*100 + '%'
-    newstar.style.height = Math.random()*3 + 'px'
-    newstar.style.width = newstar.style.height
-    newstar.classList.add('star')
-    const glow = Math.random()*10
-    newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
-    newstar.style.animationDuration = Math.random()*3+0.5 + 's'
-    document.querySelector('#donate').appendChild(newstar)
-
-    const stArr = document.querySelectorAll('.star')
-    if (stArr.length >= 100) {
-        clearInterval(fadeInt)
-    }
-}
+// function makeStar() {
+//     const newstar = document.createElement('div')
+//     newstar.style.backgroundColor = '#fff'
+//     newstar.style.borderRadius = '50%'
+//     newstar.style.position = 'absolute'
+//     newstar.style.top = Math.random()*100 + '%'
+//     newstar.style.left = Math.random()*100 + '%'
+//     newstar.style.height = Math.random()*3 + 'px'
+//     newstar.style.width = newstar.style.height
+//     newstar.classList.add('star')
+//     const glow = Math.random()*10
+//     newstar.style.boxShadow = '0 0 ' + glow + 'px' + " " + glow/2 + 'px yellow'
+//     newstar.style.animationDuration = Math.random()*3+0.5 + 's'
+//     document.querySelector('#donate').appendChild(newstar)
+//
+//     const stArr = document.querySelectorAll('.star')
+//     if (stArr.length >= 100) {
+//         clearInterval(fadeInt)
+//     }
+// }
 
 
 async function reimportDB(event) {
