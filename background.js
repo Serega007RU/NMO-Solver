@@ -552,7 +552,7 @@ async function checkOrGetTopic() {
     if (settings.mode !== 'auto') return 'null'
     const countEE = await db.countFromIndex('topics', 'completed, inputIndex', IDBKeyRange.bound([0, 0], [0, Infinity]))
     if (countEE) {
-        chrome.action.setTitle({title: 'Выполняется поиск темы'})
+        chrome.action.setTitle({title: 'Ищем тему (тест) на портале и пытаемся открыть'})
         chrome.action.setBadgeText({text: 'SEARCH'})
         if (!(await db.get('other', 'authData'))?.access_token) {
             showNotification('Ошибка', 'Нет данных об авторизации')
