@@ -217,18 +217,18 @@ async function attemptToClosePopups(count = 0) {
         if (stopRunning) return
         if (popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')) {
             const waitRemove = globalObserver.waitFor('.v-window-closebox', {removeOnce: true})
-            await simulateClick(popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)'), count)
+            await simulateClick(popup.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)'), count, true)
             await randomWait()
             await waitRemove
             // а зачем здесь "Назад" в проверке? А потому что портал может открыть тест в popup'е, ДА, ВЕСЬ тест прямо в popup'e!!!
         } else if (popup.querySelector('.v-button') && (!popup.querySelector('.v-button').textContent.endsWith('Назад') && !popup.querySelector('.v-button').textContent.startsWith(''))) {
             const waitRemove = globalObserver.waitFor('.v-button', {removeOnce: true})
-            await simulateClick(popup.querySelector('.v-button'), count)
+            await simulateClick(popup.querySelector('.v-button'), count, true)
             await randomWait()
             await waitRemove
         } else if (popup.querySelector('[class*="v-Notification"]')) {
             const waitRemove = globalObserver.waitFor('[class*="v-Notification"]', {removeOnce: true})
-            await simulateClick(popup.querySelector('[class*="v-Notification"]'), count)
+            await simulateClick(popup.querySelector('[class*="v-Notification"]'), count, true)
             await randomWait()
             popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-in-fade'}))
             popup.querySelector('[class*="v-Notification"]')?.dispatchEvent(new AnimationEvent('animationend', {animationName: 'valo-animate-out-fade'}))
@@ -597,7 +597,7 @@ function sendResults() {
 //     })
 // }
 
-async function simulateClick(element, count = 0) {
+async function simulateClick(element, count = 0, closePopup) {
     if (stopRunning) return
     if (count > 7) {
         running = false
@@ -629,12 +629,14 @@ async function simulateClick(element, count = 0) {
                 parentElement = parentElement.parentElement
             }
             if (!found) {
-                // TODO ну это просто к какому-ту дерьму всё идёт, иногда эти чёртовы popup'ы выскакивают тогда когда ты этого НЕ ОЖИДАЕШЬ
-                await attemptToClosePopups(count + 1)
                 console.warn('не удалось найти кнопку, пробуем это сделать повторно')
                 await wait(500)
-                // бывает другие элементы частично налезают на нашу кнопку, поэтому
-                // мы повторными попытками пытаемся подобрать другие координаты
+                // TODO ну это просто к какому-ту дерьму всё идёт, иногда эти чёртовы popup'ы выскакивают тогда когда ты этого НЕ ОЖИДАЕШЬ
+                await attemptToClosePopups(count + 1)
+                // если мы данным кликом уже закрываем popup, то не стоит снова пробовать нажать
+                if (closePopup) return
+                // бывает другие элементы частично налезают на нашу кнопку или выходят за границы экрана,
+                // поэтому мы повторными попытками пытаемся подобрать другие координаты
                 await simulateClick(element, count + 1)
                 return
             }
@@ -677,6 +679,7 @@ function getRandomCoordinates(element, half) {
     // генерируем рандомные координаты для клика
     const x = Math.floor(Math.random() * (right - left) + left)
     const y = Math.floor(Math.random() * (bottom - top) + top)
+    // TODO стоит учесть что элемент может быть за границами экрана
     return {x, y}
 }
 
