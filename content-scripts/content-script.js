@@ -107,13 +107,18 @@ async function answerQuestion() {
     }
 
     if (!cachedMessage.answers) {
-        console.warn('не подгружены ответы, двойной запуск?')
+        console.warn('не подгружены ответы, возможно пользователь вмешался или произошёл двойной запуск')
         return
     }
 
     // тут мы типо думаем над вопросом, от 3 до 30 секунд
     if (settings.answerWaitMax && (!topic.includes(' - Предварительное тестирование') || settings.goodScore)) {
         await wait(Math.random() * (settings.answerWaitMax - settings.answerWaitMin) + settings.answerWaitMin, true)
+    }
+
+    if (!cachedMessage.answers) {
+        console.warn('не подгружены ответы, возможно пользователь вмешался или произошёл двойной запуск')
+        return
     }
 
     // для начала проверяем случайно не отвечали ли уже на этот вопрос (на случай если страница обновлялась)
@@ -136,6 +141,11 @@ async function answerQuestion() {
         // подобным дибильным образом мы ждём когда кривой скрипт сайта перестроит все элементы ответов
         await globalObserver.waitFor('#' + idOfLastAnswer, {remove: true})
         checkedElement = document.querySelector('input[type="checkbox"]:checked')
+    }
+
+    if (!cachedMessage.answers) {
+        console.warn('не подгружены ответы, возможно пользователь вмешался или произошёл двойной запуск')
+        return
     }
 
     for (const answer of cachedMessage.answers.sort(() => 0.5 - Math.random())) {
