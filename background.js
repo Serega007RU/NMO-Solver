@@ -640,7 +640,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${educationalElement.id}/`, {
             headers: {authorization: 'Bearer ' + authData.access_token},
             method: 'GET',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+            signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
@@ -673,7 +673,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
                 mainSpecialityNameList: []
             }),
             method: 'POST',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+            signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
@@ -697,7 +697,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
             response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${element.elementId}/`, {
                 headers: {authorization: 'Bearer ' + authData.access_token},
                 method: 'GET',
-                signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+                signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
             })
             if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
             let json2 = await response.json()
@@ -774,7 +774,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id}/plan`, {
             headers: {authorization: 'Bearer ' + authData.access_token},
             method: 'PUT',
-            signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+            signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         if (!response.ok) {
@@ -801,7 +801,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id }/open-link?backUrl=https%3A%2F%2F${cabinet}.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan`, {
         headers: {authorization: 'Bearer ' + authData.access_token},
         method: 'GET',
-        signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+        signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
     })
     if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
     let json = await response.json()
@@ -828,7 +828,7 @@ async function checkErrors(json) {
                 const response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/v2/oauth/token?grant_type=refresh_token&refresh_token=${authData.refresh_token}`, {
                     headers: {"Content-Type": "application/x-www-form-urlencoded", Authorization: 'Basic ' + btoa(`client:secret`)},
                     method: 'POST',
-                    signal: AbortSignal.any([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
+                    signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
                 })
                 if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
                 const json2 = await response.json()
@@ -1586,4 +1586,24 @@ function waitUntilState(state) {
         clearInterval(timerKeepAlive)
         timerKeepAlive = null
     }
+}
+
+// TODO обходное решение если не доступно AbortSignal.any до версии 116 Chromium
+function anySignal(signals) {
+    if (AbortSignal.any) return AbortSignal.any(signals)
+
+    const contr = new AbortController()
+
+    for (const signal of signals) {
+        if (signal.aborted) {
+            contr.abort()
+            return signal
+        }
+
+        signal.addEventListener('abort', () => contr.abort(signal.reason), {
+            signal: contr.signal,
+        })
+    }
+
+    return contr.signal
 }
