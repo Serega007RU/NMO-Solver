@@ -1539,6 +1539,7 @@ function setReloadTabTimer() {
     if (settings?.mode === 'manual' || settings?.mode === 'disabled') return
     if (Date.now() - lastResetReloadTabTimer <= 5000) return
     clearTimeout(reloadTabTimer)
+    if (startFunc && !startFunc.done) return
     reloadTabTimer = setTimeout(async () => {
         if (stopRunning || !runningTab) return
         console.warn('Похоже вкладка совсем зависла, делаем перезапуск теста')
