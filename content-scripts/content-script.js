@@ -221,7 +221,7 @@ async function attemptToClosePopups(count = 0) {
             await randomWait()
             await waitRemove
             // а зачем здесь "Назад" в проверке? А потому что портал может открыть тест в popup'е, ДА, ВЕСЬ тест прямо в popup'e!!!
-        } else if (popup.querySelector('.v-button') && !popup.querySelector('.v-button').textContent.endsWith('Назад')) {
+        } else if (popup.querySelector('.v-button') && (!popup.querySelector('.v-button').textContent.endsWith('Назад') && !popup.querySelector('.v-button').textContent.startsWith(''))) {
             const waitRemove = globalObserver.waitFor('.v-button', {removeOnce: true})
             await simulateClick(popup.querySelector('.v-button'), count)
             await randomWait()
@@ -365,7 +365,7 @@ async function start(collectAnswers) {
 
     let hasSuccessTest = false
     let countGood = 0
-    const testName = document.querySelector('.c-groupbox-caption-iom-elementbox-text')?.textContent?.trim()
+    const testName = document.querySelector('.c-groupbox-content-iom-elementbox-text,.c-groupbox-nocollapsable .c-groupbox-caption-text')?.textContent?.trim()
     // если мы видим список вариантов (тестов), анализируем их
     if (document.querySelector('.v-table-cell-content:first-child')) {
         let index = 0
@@ -433,12 +433,12 @@ async function start(collectAnswers) {
         testName === 'Интерактивные ситуационные задачи' ||
         testName === 'Интерактивная ситуационная задача' ||
         testName === 'Задачи для самоподготовки' ||
-        document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи'
+        document.querySelector('.c-groupbox-content-iom-elementbox-text,.c-groupbox-nocollapsable .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи'
     ) {
         hasISTask = true
     }
 
-    const buttonNewVariant = document.querySelector('.c-groupbox-content-iom-elementbox-text .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
+    const buttonNewVariant = document.querySelector('.c-groupbox-content-iom-elementbox-text,.c-groupbox-nocollapsable .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
     if (!hasSuccessTest && buttonNewVariant) {
         await wait(500)
         // если тест не запущен и нет пройденного, то получаем новый вариант
