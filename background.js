@@ -947,8 +947,6 @@ chrome.runtime.onConnect.addListener((port) => {
                     port?.postMessage({answers, question, answerHash, error})
                 // если найден и вопрос и к нему вариант ответов
                 } else {
-                    if (!question.lastOrder) question.lastOrder = {}
-                    question.lastOrder[message.question.lastOrder] = answerHash
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
                         const result = await getAnswersByQuestionFromServer(message.question.question)
                         if (result?.question) {
@@ -956,6 +954,8 @@ chrome.runtime.onConnect.addListener((port) => {
                         }
                         error = result?.error
                     }
+                    if (!question.lastOrder) question.lastOrder = {}
+                    question.lastOrder[message.question.lastOrder] = answerHash
                     if (!question.answers[answerHash].type && message.question.answers.type) {
                         question.answers[answerHash].type = message.question.answers.type
                     } else if (question.answers[answerHash].type && message.question.answers.type && question.answers[answerHash].type.toLowerCase().includes('несколько') !== message.question.answers.type.toLowerCase().includes('несколько')) {

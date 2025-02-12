@@ -787,7 +787,10 @@ observer.observe({entryTypes: ['resource']})
 
 function highlightAnswers(remove) {
     const order = document.querySelector('.question-info-questionCounter')?.textContent?.trim()?.match(/\d+/)[0] // бывает такое что попадается один и тот же вопрос, но с разными ответами, приходится вот так извращаться
-    if (!remove && (!cachedMessage.question || cachedMessage.question.question !== normalizeText(document.querySelector('.question-title-text').textContent) || (order && !cachedMessage.question.lastOrder?.[order] && cachedMessage.question.lastOrder !== order))) {
+    if (!remove && (
+        !cachedMessage.question ||
+        cachedMessage.question.question !== normalizeText(document.querySelector('.question-title-text').textContent) ||
+        (order && cachedMessage.question.lastOrder && !cachedMessage.question.lastOrder[order] && cachedMessage.question.lastOrder !== order))) {
         if (running && started) {
             globalObserver?.rejectAllWait('canceled, user intervened')
             rejectWait?.()
