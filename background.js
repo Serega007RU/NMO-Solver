@@ -1472,15 +1472,17 @@ async function joinQuestion(newQuestion) {
             delete question.answers[answersHash].combinations
         }
         if (newQuestion.answers[answersHash].combinations && !question.correctAnswers[answersHash]) {
-            changed = true
             if (!question.answers[answersHash].combinations?.length) {
+                changed = true
                 question.answers[answersHash].combinations = newQuestion.answers[answersHash].combinations
             } else {
-                question.answers[answersHash].combinations = question.answers[answersHash].combinations.filter(subArray =>
-                    newQuestion.answers[answersHash].combinations.some(refArray =>
+                question.answers[answersHash].combinations = question.answers[answersHash].combinations.filter(subArray => {
+                    const result = newQuestion.answers[answersHash].combinations.some(refArray =>
                         refArray.length === subArray.length && refArray.every((val, index) => val === subArray[index])
                     )
-                )
+                    if (!result) changed = true
+                    return result
+                })
             }
         }
     }
