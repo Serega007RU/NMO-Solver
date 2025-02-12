@@ -375,7 +375,7 @@ async function start(collectAnswers) {
 
     let hasSuccessTest = false
     let countGood = 0
-    const testName = document.querySelector('.c-groupbox-content-iom-elementbox-text,.c-groupbox-nocollapsable .c-groupbox-caption-text')?.textContent?.trim()
+    const pageName = document.querySelector('.c-groupbox-nocollapsable .c-groupbox-caption-text')?.textContent?.trim()
     // если мы видим список вариантов (тестов), анализируем их
     if (document.querySelector('.v-table-cell-content:first-child')) {
         let index = 0
@@ -404,7 +404,7 @@ async function start(collectAnswers) {
                 await simulateClick(variant.querySelector('span'))
                 runTest()
                 return
-            } else if (testName === 'Предварительное тестирование') {
+            } else if (pageName === 'Предварительное тестирование') {
                 hasSuccessTest = true
             } else if (settings.goodScore) {
                 if (variantText.includes('оценка 3')) {
@@ -424,7 +424,7 @@ async function start(collectAnswers) {
         }
     }
 
-    if (testName === 'Запись вебинара') {
+    if (pageName === 'Запись вебинара') {
         hasSuccessTest = true
         hasGoodScore = true
     }
@@ -439,16 +439,16 @@ async function start(collectAnswers) {
         return
     }
 
-    if (testName === 'Задача' ||
-        testName === 'Интерактивные ситуационные задачи' ||
-        testName === 'Интерактивная ситуационная задача' ||
-        testName === 'Задачи для самоподготовки' ||
-        document.querySelector('.c-groupbox-content-iom-elementbox-text,.c-groupbox-nocollapsable .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи'
+    if (pageName === 'Задача' ||
+        pageName === 'Интерактивные ситуационные задачи' ||
+        pageName === 'Интерактивная ситуационная задача' ||
+        pageName === 'Задачи для самоподготовки' ||
+        document.querySelector('.c-groupbox-nocollapsable .v-slot-c-flowlayout .v-button .v-button-caption')?.textContent === 'Получить задачи'
     ) {
         hasISTask = true
     }
 
-    const buttonNewVariant = document.querySelector('.c-groupbox-content-iom-elementbox-text,.c-groupbox-nocollapsable .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
+    const buttonNewVariant = document.querySelector('.c-groupbox-nocollapsable .v-slot-c-flowlayout .v-button:not([aria-disabled="true"]) .v-button-caption')
     if (!hasSuccessTest && buttonNewVariant) {
         await wait(500)
         // если тест не запущен и нет пройденного, то получаем новый вариант
