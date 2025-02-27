@@ -87,7 +87,15 @@ function normalizeText(str) {
     if (text.endsWith(' - предварительное тестирование')) text = text.replaceAll(' - предварительное тестирование', '')
     if (text.endsWith(' - входное тестирование')) text = text.replaceAll(' - входное тестирование', '')
     if (text.endsWith(' - тестирование')) text = text.replaceAll(' - тестирование', '')
+    if (text.endsWith(' - контрольное тестирование')) text = text.replaceAll(' - контрольное тестирование', '')
     text = text.trim()
     return text
 }
-self.normalizeText = normalizeText
+
+// noinspection JSUnresolvedReference
+if (typeof global !== 'undefined') {
+    // noinspection JSUnresolvedReference
+    global.normalizeText = normalizeText
+} else {
+    self.normalizeText = normalizeText
+}
