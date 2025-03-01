@@ -204,10 +204,13 @@ async function fixDupQuestions() {
             while (cursor) {
                 const question = cursor.value
 
+                let changed = false
+
                 const newQuestion = normalizeText(question.question)
                 if (question.question !== newQuestion) {
                     console.log('Исправлено название', question)
                     question.question = newQuestion
+                    changed = true
                 }
 
                 for (const answerHash of Object.keys(question.answers)) {
@@ -221,10 +224,14 @@ async function fixDupQuestions() {
 
                     const oldQuestion = JSON.stringify(question)
                     delete question.answers[answerHash]
-                    // TODO мы удаляем комбинации так как меняется сортировка вопросов из-за разного регистра букв
-                    delete newAnswer.combinations
                     if (question.answers[newAnswerHash]) {
                         console.warn('Найдены дублирующиеся ответы', oldQuestion, question)
+                        delete newAnswer.combinations
+                        changed = true
+                    } else if (answerHash !== newAnswerHash || JSON.stringify(newAnswer.answers) !== JSON.stringify(newAnswers)) {
+                        console.warn('Вариации ответов не соответствовали', JSON.stringify(newAnswer.answers), newAnswers, newAnswerHash)
+                        delete newAnswer.combinations
+                        changed = true
                     }
 
                     newAnswer.answers = newAnswers
@@ -236,12 +243,18 @@ async function fixDupQuestions() {
                             newCorrectAnswers.push(normalizeText(answer))
                         }
                         newCorrectAnswers.sort()
+                        if (!changed && JSON.stringify(question.correctAnswers[answerHash]) !== JSON.stringify(newCorrectAnswers)) {
+                            console.warn('Правильны ответы не соответствовали', JSON.stringify(question.correctAnswers[answerHash]), newCorrectAnswers, newAnswerHash)
+                            changed = true
+                        }
                         delete question.correctAnswers[answerHash]
                         question.correctAnswers[newAnswerHash] = newCorrectAnswers
                     }
                 }
 
-                await cursor.update(question)
+                if (changed) {
+                    await cursor.update(question)
+                }
 
                 // noinspection JSVoidFunctionReturnValueUsed
                 cursor = await cursor.continue()
