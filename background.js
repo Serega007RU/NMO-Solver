@@ -457,14 +457,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 console.warn('Похоже на вкладке где решается тест что-то зависло, сделана перезагрузка вкладки', message.error)
                 reloaded++
                 if (reloaded >= settings.maxReloadTab) {
-                    startFunc = start(runningTab, true, false, true)
+                    startFunc = start(sender.tab, true, false, true)
                     startFunc.finally(() => startFunc.done = true)
                     showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
                 } else {
+                    if (sender.tab.autoDiscardable) {
+                        await chrome.tabs.update(sender.tab.id, {autoDiscardable: false})
+                    }
                     chrome.tabs.reload(sender.tab.id)
                 }
             })()
         } else {
+            if (sender.tab.autoDiscardable) {
+                chrome.tabs.update(sender.tab.id, {autoDiscardable: false})
+            }
             chrome.tabs.reload(sender.tab.id)
         }
         setReloadTabTimer()
@@ -502,12 +508,12 @@ chrome.action.onClicked.addListener(async (tab) => {
             }
             return
         }
-        startFunc = start(tab.id, response.hasTest)
+        startFunc = start(tab, response.hasTest)
         startFunc.finally(() => startFunc.done = true)
     }
 })
 
-async function start(tabId, hasTest, done, hasError) {
+async function start(tab, hasTest, done, hasError) {
     reloaded = 0
     lastScore = null
     clearTimeout(reloadTabTimer)
@@ -549,16 +555,22 @@ async function start(tabId, hasTest, done, hasError) {
             stop(false)
             return
         } else if (hasError) {
-            chrome.tabs.reload(tabId)
+            if (tab.autoDiscardable) {
+                await chrome.tabs.update(tab.id, {autoDiscardable: false})
+            }
+            chrome.tabs.reload(tab.id)
         } else {
-            chrome.tabs.sendMessage(tabId, {start: true})
+            if (tab.autoDiscardable) {
+                await chrome.tabs.update(tab.id, {autoDiscardable: false})
+            }
+            chrome.tabs.sendMessage(tab.id, {start: true})
         }
     } else {
-        await chrome.tabs.update(tabId, {url})
+        await chrome.tabs.update(tab.id, {url, autoDiscardable: false})
     }
     chrome.action.setTitle({title: 'Расширение решает тест'})
     chrome.action.setBadgeText({text: 'ON'})
-    runningTab = tabId
+    runningTab = tab.id
     setReloadTabTimer()
 }
 
@@ -1349,12 +1361,12 @@ chrome.runtime.onConnect.addListener((port) => {
                 }
             }
             if (!message.hasTest) {
-                startFunc = start(runningTab, false, true)
+                startFunc = start(port.sender.tab, false, true)
                 startFunc.finally(() => startFunc.done = true)
             }
         } else if (message.error) {
             showNotification('Предупреждение', message.error)
-            startFunc = start(runningTab, true, false, true)
+            startFunc = start(port.sender.tab, true, false, true)
             startFunc.finally(() => startFunc.done = true)
         } else {
             console.warn(message)
@@ -1560,8 +1572,9 @@ function setReloadTabTimer() {
         if (stopRunning || !runningTab) return
         console.warn('Похоже вкладка совсем зависла, делаем перезапуск теста')
         const tab = await chrome.tabs.discard(runningTab)
+        await chrome.tabs.reload(tab.id)
         runningTab = tab.id
-        startFunc = start(runningTab, true, false, true)
+        startFunc = start(tab, true, false, true)
         startFunc.finally(() => startFunc.done = true)
         showNotification('Предупреждение', 'Похоже вкладка совсем зависла, делаем перезапуск теста')
     }, Math.max(180 * 1000, settings.timeoutReloadTabMax + settings.clickWaitMax + 30000, settings.clickWaitMax, settings.answerWaitMax + settings.clickWaitMax + 30000))
