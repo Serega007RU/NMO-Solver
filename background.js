@@ -525,6 +525,7 @@ async function start(tabId, hasTest, done, hasError) {
     waitUntilState(true)
     controller = new AbortController()
     stopRunning = false
+    if (!chrome.tabs.onRemoved.hasListeners()) chrome.tabs.onRemoved.addListener(onRemovedTabsListener)
     let url = await checkOrGetTopic()
     if (url === 'error') {
         waitUntilState(false)
@@ -871,12 +872,12 @@ async function checkErrors(json) {
     }*/
 }
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+function onRemovedTabsListener(tabId) {
     if (runningTab === tabId) {
         console.warn('Работа расширения остановлена, пользователь закрыл вкладку')
         stop()
     }
-})
+}
 
 chrome.runtime.onConnect.addListener((port) => {
     port.onMessage.addListener(async (message) => {
@@ -1578,6 +1579,7 @@ function stop(resetAction=true) {
     controller = new AbortController()
     waitUntilState(false)
     clearTimeout(reloadTabTimer)
+    chrome.tabs.onRemoved.removeListener(onRemovedTabsListener)
     if (!resetAction) return
     chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
     chrome.action.setBadgeText({text: ''})
