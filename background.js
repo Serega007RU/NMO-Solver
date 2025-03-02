@@ -1421,7 +1421,7 @@ async function sendResultsToServer(results, topic) {
     if (settings.offlineMode || !settings.sendResults) return
     try {
         const response = await fetch('https://serega007.ru/api/v2/saveResults', {
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({results, topic}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
@@ -1439,7 +1439,7 @@ async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
         const response = await fetch('https://serega007.ru/api/v2/getQuestionByName', {
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: question}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
@@ -1459,7 +1459,7 @@ async function getAnswersByTopicFromServer(topicName) {
     if (settings.offlineMode) return
     try {
         const response = await fetch('https://serega007.ru/api/v2/getQuestionsByTopic', {
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: topicName}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
