@@ -237,7 +237,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     })
 
     document.querySelector('#ImportFromSite').addEventListener('click', async (event) => {
-        const elButton = event.target
+        const elButton = event.currentTarget
         if (elButton.disabled) return
         try {
             elButton.disabled = true
