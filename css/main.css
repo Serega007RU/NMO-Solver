@@ -405,6 +405,10 @@ select[disabled="disabled"] {
 	transition: .3s;
 }
 
+input:invalid {
+	outline: 1px solid #f00 !important;
+}
+
 .input-block input + input {
 	margin-left: 5px;
 }

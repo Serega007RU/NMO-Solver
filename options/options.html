@@ -76,40 +76,40 @@
         </div>
         <div class="block" data-block="semi-auto auto">
             <div class="input-block">
-                <input type="number" id="ClickWaitMin" name="ClickWaitMin" min="0" max="999" step="0.1" placeholder="мин">
-                <input type="number" id="ClickWaitMax" name="ClickWaitMax" min="0" max="999" step="0.1" placeholder="макс">
+                <input type="number" id="ClickWaitMin" name="ClickWaitMin" required min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="ClickWaitMax" name="ClickWaitMax" required min="0" max="999" step="0.1" placeholder="макс">
                 <label for="ClickWaitMin">
                     Задержка между нажатиями (мин. и макс. в секундах)
                 </label>
             </div>
             <div class="input-block">
-                <input type="number" id="AnswerWaitMin" name="AnswerWaitMin" min="0" max="999" step="0.1" placeholder="мин">
-                <input type="number" id="AnswerWaitMax" name="AnswerWaitMax" min="0" max="999" step="0.1" placeholder="макс">
+                <input type="number" id="AnswerWaitMin" name="AnswerWaitMin" required min="0" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="AnswerWaitMax" name="AnswerWaitMax" required min="0" max="999" step="0.1" placeholder="макс">
                 <label for="AnswerWaitMin">
                     Сколько времени думать над вопросом (мин. и макс. в секундах)
                 </label>
             </div>
             <div class="input-block" style="display: none">
-                <input type="number" id="MaxAttemptsNext" name="MaxAttemptsNext" min="1" max="999" step="1" placeholder="кол-во">
+                <input type="number" id="MaxAttemptsNext" name="MaxAttemptsNext" required min="1" max="999" step="1" placeholder="кол-во">
                 <label for="MaxAttemptsNext">
                     Максимальное кол-во попыток нажатий на "Следующий"
                 </label>
             </div>
             <div class="input-block">
-                <input type="number" id="TimeoutReloadTabMin" name="TimeOutReloadTab" min="5" max="999" step="0.1" placeholder="мин">
-                <input type="number" id="TimeoutReloadTabMax" name="TimeOutReloadTab" min="5" max="999" step="0.1" placeholder="макс">
+                <input type="number" id="TimeoutReloadTabMin" name="TimeOutReloadTab" required min="5" max="999" step="0.1" placeholder="мин">
+                <input type="number" id="TimeoutReloadTabMax" name="TimeOutReloadTab" required min="5" max="999" step="0.1" placeholder="макс">
                 <label for="TimeoutReloadTabMin" data-tippy-content="Если в процессе прохождения теста на вкладке что-то зависает то расширение перезагружает вкладку через заданный промежуток времени">
                     Время ожидания действия до перезагрузки вкладки (мин. и макс. в секундах)
                 </label>
             </div>
             <div class="input-block">
-                <input type="number" id="MaxReloadTab" name="MaxReloadTab" min="1" max="999" step="1" placeholder="кол-во">
+                <input type="number" id="MaxReloadTab" name="MaxReloadTab" required min="1" max="999" step="1" placeholder="кол-во">
                 <label for="MaxReloadTab" data-tippy-content="Если в процессе прохождения теста на вкладке что-то зависает то расширение перезагружает вкладку. При превышении указанного кол-ва расширение перезапускает тест">
                     Максимальное кол-во попыток перезагрузки вкладки
                 </label>
             </div>
             <div class="input-block">
-                <input type="number" id="MaxReloadTest" name="MaxReloadTest" min="0" max="999" step="1" placeholder="кол-во">
+                <input type="number" id="MaxReloadTest" name="MaxReloadTest" required min="0" max="999" step="1" placeholder="кол-во">
                 <label for="MaxReloadTest" data-tippy-content="В случае ошибки или превышения кол-ва попыток перезагрузки вкладки расширение перезапускает полностью тест (заново его открывает и пытается пройти), если таких попыток слишком много то через указанное количество расширение прекращает решение тестов">
                     Максимальное кол-во попыток перезапуска теста
                 </label>

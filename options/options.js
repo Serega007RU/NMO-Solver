@@ -50,52 +50,45 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     })
 
     document.querySelector('#ClickWaitMin').addEventListener('input', (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.clickWaitMin = event.target.valueAsNumber * 1000
-            document.querySelector('#ClickWaitMax').min = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.clickWaitMin = event.target.valueAsNumber * 1000
+        document.querySelector('#ClickWaitMax').min = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#ClickWaitMax').addEventListener('input', (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.clickWaitMax = event.target.valueAsNumber * 1000
-            document.querySelector('#ClickWaitMin').max = event.target.valueAsNumber
-            onChangedSettings()
-            toggleVisibleScript()
-        }
+        if (!event.target.reportValidity()) return
+        settings.clickWaitMax = event.target.valueAsNumber * 1000
+        document.querySelector('#ClickWaitMin').max = event.target.valueAsNumber
+        onChangedSettings()
+        toggleVisibleScript()
     })
     document.querySelector('#AnswerWaitMin').addEventListener('input', (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.answerWaitMin = event.target.valueAsNumber * 1000
-            document.querySelector('#AnswerWaitMax').min = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.answerWaitMin = event.target.valueAsNumber * 1000
+        document.querySelector('#AnswerWaitMax').min = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#AnswerWaitMax').addEventListener('input', (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.answerWaitMax = event.target.valueAsNumber * 1000
-            document.querySelector('#AnswerWaitMin').max = event.target.valueAsNumber
-            onChangedSettings()
-            toggleVisibleScript()
-        }
+        if (!event.target.reportValidity()) return
+        settings.answerWaitMax = event.target.valueAsNumber * 1000
+        document.querySelector('#AnswerWaitMin').max = event.target.valueAsNumber
+        onChangedSettings()
+        toggleVisibleScript()
     })
     document.querySelector('#MaxAttemptsNext').addEventListener('input',  (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.maxAttemptsNext = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.maxAttemptsNext = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#MaxReloadTab').addEventListener('input', (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.maxReloadTab = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.maxReloadTab = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#MaxReloadTest').addEventListener('input', (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.maxReloadTest = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.maxReloadTest = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#GoodScore').addEventListener('change', (event) => {
         settings.goodScore = event.target.checked
@@ -106,18 +99,16 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         onChangedSettings()
     })
     document.querySelector('#TimeoutReloadTabMin').addEventListener('input',  (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.timeoutReloadTabMin = event.target.valueAsNumber * 1000
-            document.querySelector('#TimeoutReloadTabMax').min = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.timeoutReloadTabMin = event.target.valueAsNumber * 1000
+        document.querySelector('#TimeoutReloadTabMax').min = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#TimeoutReloadTabMax').addEventListener('input',  (event) => {
-        if (event.target.valueAsNumber !== undefined) {
-            settings.timeoutReloadTabMax = event.target.valueAsNumber * 1000
-            document.querySelector('#TimeoutReloadTabMin').max = event.target.valueAsNumber
-            onChangedSettings()
-        }
+        if (!event.target.reportValidity()) return
+        settings.timeoutReloadTabMax = event.target.valueAsNumber * 1000
+        document.querySelector('#TimeoutReloadTabMin').max = event.target.valueAsNumber
+        onChangedSettings()
     })
     document.querySelector('#OfflineMode').addEventListener('change', (event) => {
         settings.offlineMode = event.target.checked
