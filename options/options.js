@@ -14,6 +14,8 @@ async function init() {
     document.querySelector('.main').removeAttribute('style')
 }
 const initializeFunc = init()
+// tippy.setDefaultProps({interactive: true, appendTo: () => document.body})
+tippy('[data-tippy-content]')
 
 document.addEventListener('DOMContentLoaded', async ()=> {
     await initializeFunc
@@ -164,7 +166,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             li.removeAttribute('style')
             li.removeAttribute('id')
             if (li.getAttribute('data-before') == null) li.setAttribute('data-before', '')
-            li.removeAttribute('data-tooltip')
+            li._tippy?.destroy()
             while (li.firstElementChild?.tagName === 'BR') {
                 li.firstElementChild.remove()
             }
@@ -231,7 +233,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             topic.completed = 0
             delete topic.error
             event.target.setAttribute('data-before', '')
-            event.target.removeAttribute('data-tooltip')
+            event.target._tippy?.destroy()
             await db.put('topics', topic)
         }
     })
@@ -420,10 +422,9 @@ function updateTopic(topic, element) {
     } else {
         element.setAttribute('data-before', '')
     }
+    element._tippy?.destroy()
     if (topic.error) {
-        element.setAttribute('data-tooltip', topic.error)
-    } else {
-        element.removeAttribute('data-tooltip')
+        tippy(element, {content: topic.error, theme: 'indianred', placement: 'left', interactive: true, appendTo: () => document.body})
     }
 }
 

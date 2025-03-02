@@ -136,29 +136,21 @@ header {
 	font-style: normal;
 }
 
-.topics [data-tooltip]::after {
-	content: attr(data-tooltip); /* Получаем текст из атрибута data-tooltip */
-	position: fixed;
-	top: 200px;
-	left: calc(50% - 100px);
-	text-align: center;
-	width: 250px;
-	margin-right: 10px; /* Отступ между текстом и tooltip */
-	background-color: #333;
-	color: #fff;
-	padding: 5px 10px;
-	border-radius: 5px;
-	white-space: pre-wrap;
-	opacity: 0; /* Скрыт по умолчанию */
-	visibility: hidden;
-	transition: opacity 0.3s ease, visibility 0.3s ease;
-	font-size: 14px;
-	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+.tippy-box[data-theme~="indianred"] {
+	background: indianred;
+	border: indianred;
 }
-
-.topics [data-tooltip]:hover::after {
-	opacity: 1; /* Показываем подсказку при наведении */
-	visibility: visible;
+.tippy-box[data-theme~="indianred"][data-placement^='top'] .tippy-arrow::before {
+	border-top-color: indianred;
+}
+.tippy-box[data-theme~="indianred"][data-placement^='bottom'] .tippy-arrow::before {
+	border-bottom-color: indianred;
+}
+.tippy-box[data-theme~="indianred"][data-placement^='left'] .tippy-arrow::before {
+	border-left-color: indianred;
+}
+.tippy-box[data-theme~="indianred"][data-placement^='right'] .tippy-arrow::before {
+	border-right-color: indianred;
 }
 
 .topics li:empty {
