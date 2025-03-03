@@ -51,6 +51,17 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         sendResponse({hasTest})
     } else if (message.status) {
         osReceiveStatus(message)
+    } else if (message.checkThrottle) {
+        let countCheckTimer = 0
+        const checkTimer = setInterval(() => {
+            countCheckTimer++
+            // console.log('сработало', countCheckTimer)
+            if (countCheckTimer >= 10) {
+                clearInterval(checkTimer)
+                sendResponse({success: true})
+            }
+        }, 10)
+        return true
     }
 })
 

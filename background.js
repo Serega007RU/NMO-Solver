@@ -458,23 +458,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.error) {
             (async () => {
                 await initializeFunc
-                console.warn('Похоже на вкладке где решается тест что-то зависло, сделана перезагрузка вкладки', message.error)
+                console.warn('Похоже на вкладке где решается тест что-то зависло', message.error)
                 reloaded++
                 if (reloaded >= settings.maxReloadTab) {
-                    startFunc = start(sender.tab, true, false, true)
+                    startFunc = start(sender.tab, {hasTest: true, hasError: true})
                     startFunc.finally(() => startFunc.done = true)
                     showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
                 } else {
-                    if (sender.tab.autoDiscardable) {
-                        await chrome.tabs.update(sender.tab.id, {autoDiscardable: false})
+                    if (!await checkThrottleTab(sender.tab.id)) {
+                        showNotification('Ошибка', 'Похоже браузер ограничил или приостановил работу вкладки из-за ограничений фонового режима')
+                        chrome.action.setBadgeText({text: 'ERR'})
+                        stop(false)
+                        return
                     }
-                    chrome.tabs.reload(sender.tab.id)
+                    await chrome.tabs.reload(sender.tab.id)
                 }
             })()
         } else {
-            if (sender.tab.autoDiscardable) {
-                chrome.tabs.update(sender.tab.id, {autoDiscardable: false})
-            }
             chrome.tabs.reload(sender.tab.id)
         }
         setReloadTabTimer()
@@ -514,12 +514,12 @@ chrome.action.onClicked.addListener(async (tab) => {
             }
             return
         }
-        startFunc = start(tab, response.hasTest)
+        startFunc = start(tab, {hasTest: response.hasTest})
         startFunc.finally(() => startFunc.done = true)
     }
 })
 
-async function start(tab, hasTest, done, hasError) {
+async function start(tab, {hasTest, done, hasError, forceReload}) {
     reloaded = 0
     lastScore = null
     lastResetReloadTabTimer = null
@@ -540,6 +540,12 @@ async function start(tab, hasTest, done, hasError) {
     controller = new AbortController()
     stopRunning = false
     if (!chrome.tabs.onRemoved.hasListeners()) chrome.tabs.onRemoved.addListener(onRemovedTabsListener)
+    if (hasError && !await checkThrottleTab(tab.id)) {
+        showNotification('Ошибка', 'Похоже браузер ограничил или приостановил работу вкладки из-за ограничений фонового режима')
+        chrome.action.setBadgeText({text: 'ERR'})
+        stop(false)
+        return
+    }
     let url = await checkOrGetTopic()
     if (url === 'error') {
         waitUntilState(false)
@@ -563,22 +569,30 @@ async function start(tab, hasTest, done, hasError) {
             stop(false)
             return
         } else if (hasError) {
+            runningTab = tab.id
             if (tab.autoDiscardable) {
                 await chrome.tabs.update(tab.id, {autoDiscardable: false})
             }
+            if (forceReload) {
+                tab = await chrome.tabs.discard(tab.id)
+            }
             chrome.tabs.reload(tab.id)
         } else {
+            runningTab = tab.id
             if (tab.autoDiscardable) {
                 await chrome.tabs.update(tab.id, {autoDiscardable: false})
             }
             chrome.tabs.sendMessage(tab.id, {start: true})
         }
     } else {
+        runningTab = tab.id
+        if (forceReload) {
+            tab = await chrome.tabs.discard(tab.id)
+        }
         await chrome.tabs.update(tab.id, {url, autoDiscardable: false})
     }
     chrome.action.setTitle({title: 'Расширение решает тест'})
     chrome.action.setBadgeText({text: 'ON'})
-    runningTab = tab.id
     setReloadTabTimer()
 }
 
@@ -1373,7 +1387,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     console.warn('От вкладки пришло сообщение о том решение теста завершено но id не соответствует с runningTab', runningTab, port?.sender, message)
                     return
                 }
-                startFunc = start(port.sender.tab, false, true)
+                startFunc = start(port.sender.tab, {done: true})
                 startFunc.finally(() => startFunc.done = true)
             }
         } else if (message.error) {
@@ -1382,7 +1396,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 return
             }
             showNotification('Предупреждение', message.error)
-            startFunc = start(port.sender.tab, true, false, true)
+            startFunc = start(port.sender.tab, {hasTest: true, hasError: true})
             startFunc.finally(() => startFunc.done = true)
         } else {
             console.warn('Неизвестное сообщение от вкладки', message, port?.sender)
@@ -1589,14 +1603,25 @@ function setReloadTabTimer() {
         let tab = {id: runningTab}
         lastResetReloadTabTimer = null
         runningTab = null
-        console.warn('Похоже вкладка совсем зависла, делаем перезапуск теста')
-        tab = await chrome.tabs.discard(tab.id)
-        await chrome.tabs.reload(tab.id)
-        startFunc = start(tab, true, false, true)
+        console.warn('Похоже вкладка совсем зависла, пытаемся её реанимировать')
+        startFunc = start(tab, {hasTest: true, hasError: true, forceReload: true})
         startFunc.finally(() => startFunc.done = true)
         showNotification('Предупреждение', 'Похоже вкладка совсем зависла, делаем перезапуск теста')
     }, Math.max(180 * 1000, settings.timeoutReloadTabMax + settings.clickWaitMax + 30000, settings.clickWaitMax, settings.answerWaitMax + settings.clickWaitMax + 30000))
     lastResetReloadTabTimer = Date.now()
+}
+
+async function checkThrottleTab(tabId) {
+    console.log('Проверяем вкладку на троттлинг')
+    return new Promise(async (resolve, reject) => {
+        setTimeout(() => resolve(false), 5000)
+        try {
+            await chrome.tabs.sendMessage(tabId, {checkThrottle: true})
+            resolve(true)
+        } catch (error) {
+            reject(error.message)
+        }
+    })
 }
 
 function stop(resetAction=true) {
