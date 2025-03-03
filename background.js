@@ -451,6 +451,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })()
         return true
     } else if (message.reloadPage) {
+        if (runningTab !== sender.tab.id) {
+            console.warn('От вкладки пришёл запрос на перезагрузку но id не соответствует с runningTab', runningTab, sender.tab.id, sender, message)
+            return
+        }
         if (message.error) {
             (async () => {
                 await initializeFunc
@@ -480,6 +484,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             settings = await db.get('other', 'settings')
             self.settings = settings
         })()
+    } else {
+        console.warn('Неизвестное сообщение от вкладки', message, sender)
     }
 })
 
@@ -516,6 +522,8 @@ chrome.action.onClicked.addListener(async (tab) => {
 async function start(tab, hasTest, done, hasError) {
     reloaded = 0
     lastScore = null
+    lastResetReloadTabTimer = null
+    runningTab = null
     clearTimeout(reloadTabTimer)
     if (done) {
         started = 0
@@ -1361,15 +1369,23 @@ chrome.runtime.onConnect.addListener((port) => {
                 }
             }
             if (!message.hasTest) {
+                if (!port || runningTab !== port.sender.tab.id) {
+                    console.warn('От вкладки пришло сообщение о том решение теста завершено но id не соответствует с runningTab', runningTab, port?.sender, message)
+                    return
+                }
                 startFunc = start(port.sender.tab, false, true)
                 startFunc.finally(() => startFunc.done = true)
             }
         } else if (message.error) {
+            if (!port || runningTab !== port.sender.tab.id) {
+                console.warn('От вкладки пришло сообщение об ошибке но id не соответствует с runningTab', runningTab, port?.sender, message)
+                return
+            }
             showNotification('Предупреждение', message.error)
             startFunc = start(port.sender.tab, true, false, true)
             startFunc.finally(() => startFunc.done = true)
         } else {
-            console.warn(message)
+            console.warn('Неизвестное сообщение от вкладки', message, port?.sender)
         }
     })
 
@@ -1570,10 +1586,12 @@ function setReloadTabTimer() {
     if (startFunc && !startFunc.done) return
     reloadTabTimer = setTimeout(async () => {
         if (stopRunning || !runningTab) return
+        let tab = {id: runningTab}
+        lastResetReloadTabTimer = null
+        runningTab = null
         console.warn('Похоже вкладка совсем зависла, делаем перезапуск теста')
-        const tab = await chrome.tabs.discard(runningTab)
+        tab = await chrome.tabs.discard(tab.id)
         await chrome.tabs.reload(tab.id)
-        runningTab = tab.id
         startFunc = start(tab, true, false, true)
         startFunc.finally(() => startFunc.done = true)
         showNotification('Предупреждение', 'Похоже вкладка совсем зависла, делаем перезапуск теста')
