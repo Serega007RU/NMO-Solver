@@ -574,6 +574,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
             }
             if (forceReload) {
                 tab = await chrome.tabs.discard(tab.id)
+                runningTab = tab.id
             }
             chrome.tabs.reload(tab.id)
         } else {
@@ -587,6 +588,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
         runningTab = tab.id
         if (forceReload) {
             tab = await chrome.tabs.discard(tab.id)
+            runningTab = tab.id
         }
         await chrome.tabs.update(tab.id, {url, autoDiscardable: false})
     }
