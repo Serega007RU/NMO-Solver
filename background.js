@@ -484,7 +484,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             settings = await db.get('other', 'settings')
             self.settings = settings
         })()
-    } else {
+    } else if (!message.authData) {
         console.warn('Неизвестное сообщение от вкладки', message, sender)
     }
 })
