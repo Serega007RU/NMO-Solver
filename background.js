@@ -461,14 +461,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 console.warn('Похоже на вкладке где решается тест что-то зависло', message.error)
                 reloaded++
                 if (reloaded >= settings.maxReloadTab) {
+                    showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
                     startFunc = start(sender.tab, {hasTest: true, hasError: true})
                     startFunc.finally(() => startFunc.done = true)
-                    showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
                 } else {
                     if (!await checkThrottleTab(sender.tab.id)) {
                         showNotification('Ошибка', 'Похоже браузер ограничил или приостановил работу вкладки из-за ограничений фонового режима')
                         chrome.action.setBadgeText({text: 'ERR'})
-                        stop(false)
+                        stop(sender.tab.id)
                         return
                     }
                     await chrome.tabs.reload(sender.tab.id)
@@ -499,8 +499,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
     if (runningTab || (startFunc && !startFunc.done)) {
         console.warn('Работа расширения остановлена по запросу пользователя')
-        if (runningTab) chrome.tabs.sendMessage(runningTab, {stop: true})
-        stop()
+        stop(runningTab, true)
     } else {
         let response
         try {
@@ -533,7 +532,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
     if (started >= settings.maxReloadTest) {
         showNotification('Ошибка', 'Слишком много попыток запустить тест')
         chrome.action.setBadgeText({text: 'ERR'})
-        stop(false)
+        stop(tab.id)
         return
     }
     waitUntilState(true)
@@ -543,7 +542,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
     if (hasError && !await checkThrottleTab(tab.id)) {
         showNotification('Ошибка', 'Похоже браузер ограничил или приостановил работу вкладки из-за ограничений фонового режима')
         chrome.action.setBadgeText({text: 'ERR'})
-        stop(false)
+        stop(tab.id)
         return
     }
     let url = await checkOrGetTopic()
@@ -552,7 +551,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
         started = 0
         if (stopRunning) return
         chrome.action.setBadgeText({text: 'ERR'})
-        stop(false)
+        stop(tab.id)
         return
     }
     if (url === 'null') {
@@ -560,13 +559,13 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
             showNotification('Готово', 'Расширение окончил работу')
             chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
             chrome.action.setBadgeText({text: 'DONE'})
-            stop(false)
+            stop(tab.id)
             return
         } else if (!hasTest) {
             chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
             showNotification('Ошибка', 'На данной странице нет теста или не назначены тесты в настройках')
             chrome.action.setBadgeText({text: 'ERR'})
-            stop(false)
+            stop(tab.id)
             return
         } else if (hasError) {
             runningTab = tab.id
@@ -909,7 +908,7 @@ async function checkErrors(json) {
 function onRemovedTabsListener(tabId) {
     if (runningTab === tabId) {
         console.warn('Работа расширения остановлена, пользователь закрыл вкладку')
-        stop()
+        stop(tabId, true)
     }
 }
 
@@ -1604,9 +1603,9 @@ function setReloadTabTimer() {
         lastResetReloadTabTimer = null
         runningTab = null
         console.warn('Похоже вкладка совсем зависла, пытаемся её реанимировать')
+        showNotification('Предупреждение', 'Похоже вкладка совсем зависла, делаем перезапуск теста')
         startFunc = start(tab, {hasTest: true, hasError: true, forceReload: true})
         startFunc.finally(() => startFunc.done = true)
-        showNotification('Предупреждение', 'Похоже вкладка совсем зависла, делаем перезапуск теста')
     }, Math.max(180 * 1000, settings.timeoutReloadTabMax + settings.clickWaitMax + 30000, settings.clickWaitMax, settings.answerWaitMax + settings.clickWaitMax + 30000))
     lastResetReloadTabTimer = Date.now()
 }
@@ -1624,7 +1623,16 @@ async function checkThrottleTab(tabId) {
     })
 }
 
-function stop(resetAction=true) {
+function stop(tabId, resetAction) {
+    if (tabId) {
+        (async () => {
+            try {
+                await chrome.tabs.sendMessage(tabId, {stop: true})
+            } catch (error) {
+                console.warn(error)
+            }
+        })();
+    }
     runningTab = null
     lastScore = null
     collectAnswers = null

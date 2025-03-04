@@ -726,7 +726,7 @@ function stop() {
     rejectWait?.()
     countSaveAnswers = 0
     countAnsweredAnswers = 0
-    port.postMessage({running: false, collectAnswers: null})
+    port?.postMessage({running: false, collectAnswers: null})
 }
 
 async function randomWait() {
