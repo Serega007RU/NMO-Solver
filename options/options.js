@@ -231,10 +231,11 @@ document.addEventListener('DOMContentLoaded', async ()=> {
 
     document.querySelector('#ImportFromSite').addEventListener('click', async (event) => {
         const elButton = event.currentTarget
+        const status = elButton.querySelector('div')
         if (elButton.disabled) return
         try {
             elButton.disabled = true
-            elButton.textContent = 'Импортируем...'
+            status.textContent = 'Импортируем...'
             const authData = await db.get('other', 'authData')
             const cabinet = await db.get('other', 'cabinet')
             if (!authData?.access_token || !cabinet) {
@@ -267,7 +268,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             alert(error)
         } finally {
             elButton.disabled = false
-            elButton.textContent = 'Импортировать темы'
+            status.textContent = 'Импортировать темы'
             elTopics.dispatchEvent(new Event('input', { bubbles: true }))
         }
     })
