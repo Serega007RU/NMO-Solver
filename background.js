@@ -910,7 +910,7 @@ async function checkErrors(json) {
 function onRemovedTabsListener(tabId) {
     if (runningTab === tabId) {
         console.warn('Работа расширения остановлена, пользователь закрыл вкладку')
-        stop(tabId, true)
+        stop(null, true)
     }
 }
 
