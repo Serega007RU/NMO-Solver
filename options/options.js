@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
         settings.offlineMode = event.target.checked
         if (settings.offlineMode) document.querySelector('.export-import').removeAttribute('style')
         else document.querySelector('.export-import').style.display = 'none'
+        document.querySelector('#SendResults').disabled = settings.offlineMode
         onChangedSettings()
     })
     document.querySelector('#SendResults').addEventListener('change', (event) => {
@@ -327,6 +328,7 @@ async function restoreOptions() {
     document.querySelector('#OfflineMode').checked = settings.offlineMode
     if (settings.offlineMode) document.querySelector('.export-import').removeAttribute('style')
     else document.querySelector('.export-import').style.display = 'none'
+    document.querySelector('#SendResults').disabled = settings.offlineMode
     document.querySelector('#SendResults').checked = settings.sendResults
 
     await restoreTopics()

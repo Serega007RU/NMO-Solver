@@ -481,6 +481,10 @@ fieldset div {
 	background: #97e4af;
 }
 
+.toggle-pill-color input[type="checkbox"]:disabled + label {
+	background: #bfbfbf;
+}
+
 .toggle-pill-color input[type="checkbox"]:checked + label:before {
 	box-shadow: -2px 0px 5px rgba(0, 0, 0, 0.2);
 	left: 1.6em;
