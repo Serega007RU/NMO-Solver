@@ -423,7 +423,7 @@ async function start(collectAnswers) {
                 } else if (variantText.includes('оценка 4')) {
                     countGood += 8
                 } else if (variantText.includes('оценка 5')) {
-                    countGood += 30
+                    countGood += 60
                 }
                 if (countGood >= 60) {
                     hasSuccessTest = true
