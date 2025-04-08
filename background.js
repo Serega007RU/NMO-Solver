@@ -460,7 +460,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 await initializeFunc
                 console.warn('Похоже на вкладке где решается тест что-то зависло', message.error)
                 reloaded++
-                if (reloaded >= settings.maxReloadTab) {
+                if (reloaded > settings.maxReloadTab) {
                     showNotification('Предупреждение', 'Слишком много попыток перезагрузить страницу')
                     startFunc = start(sender.tab, {hasTest: true, hasError: true})
                     startFunc.finally(() => startFunc.done = true)
@@ -529,7 +529,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
     } else {
         started++
     }
-    if (started >= settings.maxReloadTest) {
+    if (started > (settings.maxReloadTest + 1)) {
         showNotification('Ошибка', 'Слишком много попыток запустить тест')
         chrome.action.setBadgeText({text: 'ERR'})
         stop(tab.id)
