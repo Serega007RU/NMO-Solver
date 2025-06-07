@@ -131,13 +131,33 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     document.querySelector('#importdb').addEventListener('click', reimportDB)
     document.querySelector('#exportdb').addEventListener('click', exportDB)
 
-    // это просто один большой сплошной костыль заставляющий подобие нашего textarea работать с текстом без форматирования
-    document.querySelector('.topics').addEventListener('paste', (event) => {
-        const text = event.clipboardData.getData('text/plain').replaceAll('\t', ' ')
-        event.preventDefault()
-        document.execCommand('insertText', false, text)
-    })
     const elTopics = document.querySelector('.topics')
+    // Handle paste event
+    elTopics.addEventListener('paste', (e) => {
+        e.preventDefault()
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain').replaceAll('\t', ' ')
+        const lines = text.split('\n')
+
+        // Insert at cursor position
+        const selection = window.getSelection()
+        if (selection.rangeCount) {
+            const range = selection.getRangeAt(0)
+            range.deleteContents()
+
+            lines.forEach((line, index) => {
+                const li = document.createElement('li')
+                li.textContent = line.trim()
+
+                if (index === 0) {
+                    range.insertNode(li)
+                } else {
+                    elTopics.appendChild(li)
+                }
+            });
+        }
+
+        elTopics.dispatchEvent(new Event('input', { bubbles: true }))
+    })
     let oldValueTopics = elTopics.innerHTML
     let savedCursor
     elTopics.addEventListener('input', () => {
@@ -438,6 +458,8 @@ async function updateTopics(elTopics, skipTimer) {
         updateTopics(elTopics)
     }
 
+    console.log('Обновление topics')
+
     const topicsStore = db.transaction('topics', 'readwrite').store
 
     const dirty = topicsStore.index('dirty')
@@ -522,6 +544,8 @@ async function updateTopics(elTopics, skipTimer) {
         const key = await topicsStore.put(topic)
         li.id = key
     }
+
+    console.log('Обновление topics окончено')
 }
 
 function wait(ms) {

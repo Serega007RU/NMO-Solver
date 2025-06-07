@@ -346,7 +346,7 @@ async function fixDupTopics() {
                 cursor = await cursor.continue()
                 continue
             }
-            const newName = normalizeText(topic.name)
+            const newName = normalizeText(topic.name, true)
             const found = await transaction.objectStore('topics').index('name').get(newName)
             if (found && found._id !== topic._id) {
                 console.warn('Найден дублирующий topic, он был удалён и объединён', found)
@@ -355,9 +355,9 @@ async function fixDupTopics() {
                     topic.id = found.id
                 }
                 if (topic.name !== found.name) {
-                    topic.name = normalizeText(found.name)
+                    topic.name = normalizeText(found.name, true)
                 } else if (topic.name) {
-                    topic.name = normalizeText(topic.name)
+                    topic.name = normalizeText(topic.name, true)
                 }
                 if (topic.code !== found.number) {
                     topic.code = found.number
@@ -626,6 +626,7 @@ async function checkOrGetTopic() {
                 if (error instanceof TopicError) {
                     if (error.message === 'Уже пройдено') {
                         educationalElement.completed = 1
+                        delete educationalElement.dirty
                     } else {
                         educationalElement.error = error.message
                         educationalElement.completed = 2
@@ -960,6 +961,15 @@ chrome.runtime.onConnect.addListener((port) => {
                 // добавление другого варианта ответов (в одном вопросе может быть несколько вариаций ответов с разными ответами)
                 if (!question.answers[answerHash]) {
                     question.answers[answerHash] = message.question.answers
+                    // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                    if (question.topics.length > 1 || question.topics[0] !== topic._id) {
+                        for (const aH of Object.keys(question.answers)) {
+                            if (!question.answers[aH].topics) {
+                                question.answers[aH].topics = [...question.topics]
+                            }
+                        }
+                        question.answers[answerHash].topics = [topic._id]
+                    }
                     if (!question.lastOrder) question.lastOrder = {}
                     question.lastOrder[message.question.lastOrder] = answerHash
                     const multi = question.answers[answerHash].type.toLowerCase().includes('несколько')
@@ -1015,6 +1025,16 @@ chrome.runtime.onConnect.addListener((port) => {
                             const multi = question.answers[answerHash].type?.toLowerCase()?.includes('несколько')
                             question.answers[answerHash].combinations = getCombinations(Array.from(question.answers[answerHash].answers.keys()), multi)
                         }
+                    }
+                    // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                    if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[answerHash].topics?.includes(topic._id)) {
+                        for (const aH of Object.keys(question.answers)) {
+                            if (!question.answers[aH].topics) {
+                                question.answers[aH].topics = [...question.topics]
+                            }
+                        }
+                        if (!question.answers[answerHash].topics?.length) question.answers[answerHash].topics = []
+                        question.answers[answerHash].topics.push(topic._id)
                     }
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
@@ -1200,6 +1220,16 @@ chrome.runtime.onConnect.addListener((port) => {
                                 changedCombinations = true
                                 delete question.answers[matchAnswers[0]].combinations
                             }
+                            // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                            if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0]].topics?.includes(topic._id)) {
+                                for (const aH of Object.keys(question.answers)) {
+                                    if (!question.answers[aH].topics) {
+                                        question.answers[aH].topics = [...question.topics]
+                                    }
+                                }
+                                if (!question.answers[matchAnswers[0]].topics?.length) question.answers[matchAnswers[0]].topics = []
+                                question.answers[matchAnswers[0]].topics.push(topic._id)
+                            }
                             if (question.correctAnswers['unknown']) {
                                 for (const answer of resultQuestion.answers.usedAnswers) {
                                     const index = question.correctAnswers['unknown'].indexOf(answer)
@@ -1293,6 +1323,16 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                             stats.ignored++
                         } else if (!fakeCorrectAnswers) {
+                            // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                            if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0].answerHash].topics?.includes(topic._id)) {
+                                for (const aH of Object.keys(question.answers)) {
+                                    if (!question.answers[aH].topics) {
+                                        question.answers[aH].topics = [...question.topics]
+                                    }
+                                }
+                                if (!question.answers[matchAnswers[0].answerHash].topics?.length) question.answers[matchAnswers[0].answerHash].topics = []
+                                question.answers[matchAnswers[0].answerHash].topics.push(topic._id)
+                            }
                             // удаляем ту комбинацию которая была использована при попытке
                             changedCombinations = true
                             question.answers[matchAnswers[0].answerHash].combinations.splice(matchAnswers[0].index, 1)
@@ -1372,6 +1412,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     educationalElement.error = message.error
                 } else {
                     educationalElement.completed = 1
+                    delete educationalElement.dirty
                 }
                 await db.put('topics', educationalElement)
                 if (educationalElement.inputIndex != null) {
