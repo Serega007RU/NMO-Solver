@@ -301,7 +301,7 @@ async function start(collectAnswers) {
         if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')?.parentElement?.textContent === 'Быстрый переход') {
             await attemptToClosePopups()
 
-            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
+            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -342,7 +342,7 @@ async function start(collectAnswers) {
             await waitNext
             // await globalObserver.waitFor('.c-table-clickable-cell')
         } else {
-            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
+            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -364,8 +364,8 @@ async function start(collectAnswers) {
             return
         }
     } else if (!settings.selectionMethod && lastScore?.score?.includes('Оценка 2') && lastScore?.topic && !lastScore.topic.includes(' - Предварительное тестирование')) {
-        const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
-        if (topic === normalizeText(lastScore.topic)) {
+        const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
+        if (topic === normalizeText(lastScore.topic, true)) {
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
             await wait(500)
@@ -534,7 +534,7 @@ function sendQuestion() {
             type: document.querySelector('.mat-card-question__type').textContent.trim(),
             answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeText(item.textContent)).sort()
         },
-        topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
+        topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent, true)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
     cachedMessage = {}
@@ -575,7 +575,7 @@ function sendResults() {
         results.push(question)
     }
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
-    sendObject.topic = normalizeText(topic)
+    sendObject.topic = normalizeText(topic, true)
     sendObject.results = results
     sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
     port.postMessage(sendObject)

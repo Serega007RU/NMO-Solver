@@ -768,10 +768,10 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
                     foundEE = json2
                     break
                 }
-            } else if (educationalElement.name === normalizeText(json2.name)) {
+            } else if (educationalElement.name === normalizeText(json2.name, true)) {
                 foundEE = json2
                 break
-            } else if (cut && normalizeText(json2.name).includes(educationalElement.name)) {
+            } else if (cut && normalizeText(json2.name, true).includes(educationalElement.name)) {
                 foundEE = json2
                 break
             }
@@ -786,7 +786,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
 
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 
-    foundEE.name = normalizeText(foundEE.name)
+    foundEE.name = normalizeText(foundEE.name, true)
 
     if (educationalElement.name !== foundEE.name) {
         if (educationalElement.name) {
