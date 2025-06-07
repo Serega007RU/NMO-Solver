@@ -20,7 +20,7 @@ let lastScore
 
 class TopicError extends Error {}
 
-const dbVersion = 17
+const dbVersion = 18
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -76,6 +76,7 @@ async function init() {
         }
 
         if (oldVersion <= 14) {
+            console.log('Этап обновления с версии 14 на 15')
             await db.deleteObjectStore('questions')
             await db.deleteObjectStore('topics')
             const questions = db.createObjectStore('questions', {autoIncrement: true, keyPath: '_id'})
@@ -89,6 +90,7 @@ async function init() {
         }
 
         if (oldVersion <= 15) {
+            console.log('Этап обновления с версии 15 на 16')
             transaction.objectStore('topics').createIndex('dirty', 'dirty')
             transaction.objectStore('topics').createIndex('inputIndex', 'inputIndex')
             transaction.objectStore('topics').createIndex('completed, inputIndex', ['completed', 'inputIndex'])
@@ -100,9 +102,18 @@ async function init() {
         }
 
         if (oldVersion <= 16) {
+            console.log('Этап обновления с версии 16 на 17')
             settings = await transaction.objectStore('other').get('settings')
             settings.sendResults = true
             await transaction.objectStore('other').put(settings, 'settings')
+        }
+
+        if (oldVersion <= 17) {
+            console.log('Этап обновления с версии 17 на 18')
+            console.log('очистка topics')
+            await transaction.objectStore('topics').clear()
+            console.log('очистка questions')
+            await transaction.objectStore('questions').clear()
         }
 
         console.log('Обновление базы данных завершено')
@@ -1492,7 +1503,7 @@ function getCombinations(items, multi) {
 async function sendResultsToServer(results, topic) {
     if (settings.offlineMode || !settings.sendResults) return
     try {
-        const response = await fetch('https://serega007.ru/api/v2/saveResults', {
+        const response = await fetch('https://serega007.ru/api/v3/saveResults', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({results, topic}),
@@ -1510,7 +1521,7 @@ async function sendResultsToServer(results, topic) {
 async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/api/v2/getQuestionByName', {
+        const response = await fetch('https://serega007.ru/api/v3/getQuestionByName', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: question}),
@@ -1530,7 +1541,7 @@ async function getAnswersByQuestionFromServer(question) {
 async function getAnswersByTopicFromServer(topicName) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/api/v2/getQuestionsByTopic', {
+        const response = await fetch('https://serega007.ru/api/v3/getQuestionsByTopic', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: topicName}),

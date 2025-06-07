@@ -5,7 +5,7 @@ document.querySelector('#version').textContent = 'Версия ' + chrome.runtim
 
 let db, settings
 async function init() {
-    db = await idb.openDB('nmo', 17)
+    db = await idb.openDB('nmo', 18)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
