@@ -167,7 +167,7 @@ async function answerQuestion() {
     for (const answer of cachedMessage.answers.sort(() => 0.5 - Math.random())) {
         const answersElements = document.querySelectorAll('.question-inner-html-text')
         for (const el of answersElements) {
-            if (normalizeText(el.textContent) === answer) {
+            if (normalizeText_old(el.textContent) === answer) {
                 // если он уже выбран, то нет смысла снова его тыкать
                 if (el.closest('.mdc-form-field').querySelector('input').checked) {
                     continue
@@ -306,7 +306,7 @@ async function start(collectAnswers) {
         if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')?.parentElement?.textContent === 'Быстрый переход') {
             await attemptToClosePopups()
 
-            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
+            const topic = normalizeText_old(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -347,7 +347,7 @@ async function start(collectAnswers) {
             await waitNext
             // await globalObserver.waitFor('.c-table-clickable-cell')
         } else {
-            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
+            const topic = normalizeText_old(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -369,8 +369,8 @@ async function start(collectAnswers) {
             return
         }
     } else if (!settings.selectionMethod && lastScore?.score?.includes('Оценка 2') && lastScore?.topic && !lastScore.topic.includes(' - Предварительное тестирование')) {
-        const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
-        if (topic === normalizeText(lastScore.topic, true)) {
+        const topic = normalizeText_old(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
+        if (topic === normalizeText_old(lastScore.topic, true)) {
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
             await wait(500)
@@ -537,21 +537,21 @@ function sendQuestion() {
         port.onDisconnect.addListener(() => port = null)
     }
     const question = {
+        question: normalizeText_old(document.querySelector('.question-title-text').textContent),
+        answers: {
+            type: document.querySelector('.mat-card-question__type').textContent.trim(),
+            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeText_old(item.textContent)).sort()
+        },
+        topics: [normalizeText_old((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent, true)],
+        lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
+    }
+    const questionNew = {
         question: normalizeText(document.querySelector('.question-title-text').textContent),
         answers: {
             type: document.querySelector('.mat-card-question__type').textContent.trim(),
             answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeText(item.textContent)).sort()
         },
         topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent, true)],
-        lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
-    }
-    const questionNew = {
-        question: normalizeTextNew(document.querySelector('.question-title-text').textContent),
-        answers: {
-            type: document.querySelector('.mat-card-question__type').textContent.trim(),
-            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeTextNew(item.textContent)).sort()
-        },
-        topics: [normalizeTextNew((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent, true)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
     cachedMessage = {}
@@ -584,10 +584,10 @@ function sendResults() {
     const resultsNew = []
     for (const el of correctAnswersElements) {
         const question = {
-            question: normalizeText(el.querySelector('.questionList-item-content-title').textContent),
+            question: normalizeText_old(el.querySelector('.questionList-item-content-title').textContent),
             answers: {
                 type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
-                usedAnswers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText(item.textContent)).sort()
+                usedAnswers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText_old(item.textContent)).sort()
             },
             correct: Boolean(el.querySelector('[svgicon="correct"]')),
             lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
@@ -596,10 +596,10 @@ function sendResults() {
     }
     for (const el of correctAnswersElements) {
         const question = {
-            question: normalizeTextNew(el.querySelector('.questionList-item-content-title').textContent),
+            question: normalizeText(el.querySelector('.questionList-item-content-title').textContent),
             answers: {
                 type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
-                usedAnswers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeTextNew(item.textContent)).sort()
+                usedAnswers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeText(item.textContent)).sort()
             },
             correct: Boolean(el.querySelector('[svgicon="correct"]')),
             lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
@@ -607,11 +607,11 @@ function sendResults() {
         resultsNew.push(question)
     }
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
-    sendObject.topic = normalizeText(topic, true)
+    sendObject.topic = normalizeText_old(topic, true)
     sendObject.results = results
     sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
     const topicNew = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
-    sendObjectNew.topic = normalizeTextNew(topicNew, true)
+    sendObjectNew.topic = normalizeText(topicNew, true)
     sendObjectNew.results = resultsNew
     sendObjectNew.lastScore = {topic: topicNew, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
     port.postMessage(sendObjectNew)
@@ -837,7 +837,7 @@ function highlightAnswers(remove) {
     const order = document.querySelector('.question-info-questionCounter')?.textContent?.trim()?.match(/\d+/)[0] // бывает такое что попадается один и тот же вопрос, но с разными ответами, приходится вот так извращаться
     if (!remove && (
         !cachedMessage.question ||
-        cachedMessage.question.question !== normalizeText(document.querySelector('.question-title-text').textContent) ||
+        cachedMessage.question.question !== normalizeText_old(document.querySelector('.question-title-text').textContent) ||
         (order && cachedMessage.question.lastOrder && !cachedMessage.question.lastOrder[order] && cachedMessage.question.lastOrder !== order))) {
         if (running && started) {
             globalObserver?.rejectAllWait('canceled, user intervened')
@@ -857,7 +857,7 @@ function highlightAnswers(remove) {
     for (const el of document.querySelectorAll('.question-inner-html-text')) {
         const formField = el.closest('.mdc-form-field')
         if (formField.querySelector('input:disabled')) return
-        if (cachedMessage.answers?.includes(normalizeText(el.textContent))) {
+        if (cachedMessage.answers?.includes(normalizeText_old(el.textContent))) {
             highlight(formField, cachedMessage.correct ? 'rgb(26 182 65 / 60%)' : 'rgb(190 123 9 / 60%)')
         } else if (formField.querySelector('input:checked')) {
             if (cachedMessage.correct) {

@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
                     if (ee.status !== 'included') continue
                     const name = ee.elementName || ee.elementTitle || ee.elementId
                     if (elTopics.innerText.includes(name)) continue
-                    const object = {id: ee.elementId, name: normalizeText(ee.elementName || ee.elementTitle), dirty: 1}
+                    const object = {id: ee.elementId, name: normalizeText_old(ee.elementName || ee.elementTitle, true), dirty: 1}
                     await putNewTopic(object, topicsStore)
                     const li = document.createElement('li')
                     li.textContent = name
@@ -505,11 +505,11 @@ async function updateTopics(elTopics, skipTimer) {
             if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(ee[0])) {
                 object.id = ee[0]
             } else {
-                object.name = normalizeText(ee[0])
+                object.name = normalizeText_old(ee[0], true)
             }
         } else if (ee[0]?.trim() && ee[1]?.trim()) {
             object.code = ee[0].trim()
-            object.name = normalizeText(ee[1])
+            object.name = normalizeText_old(ee[1], true)
         }
 
         let topic

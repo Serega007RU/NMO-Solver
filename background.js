@@ -2,6 +2,7 @@ import { openDB } from '/libs/idb.js';
 import { default as objectHash } from '/libs/object-hash.js';
 import '/utils.js'
 import '/normalize-text.js'
+import '/normalize-text_old.js'
 
 let db
 let runningTab
@@ -241,7 +242,7 @@ async function fixDupQuestions() {
 
                 let changed = false
 
-                const newQuestion = normalizeTextNew(question.question)
+                const newQuestion = normalizeText(question.question)
                 if (question.question !== newQuestion) {
                     console.log('Исправлено название', question)
                     question.question = newQuestion
@@ -251,7 +252,7 @@ async function fixDupQuestions() {
                 for (const answerHash of Object.keys(question.answers)) {
                     const newAnswers = []
                     for (const answer of question.answers[answerHash].answers) {
-                        newAnswers.push(normalizeTextNew(answer))
+                        newAnswers.push(normalizeText(answer))
                     }
                     newAnswers.sort()
                     const newAnswer = question.answers[answerHash]
@@ -275,7 +276,7 @@ async function fixDupQuestions() {
                     if (question.correctAnswers[answerHash]) {
                         const newCorrectAnswers = []
                         for (const answer of question.correctAnswers[answerHash]) {
-                            newCorrectAnswers.push(normalizeTextNew(answer))
+                            newCorrectAnswers.push(normalizeText(answer))
                         }
                         newCorrectAnswers.sort()
                         if (!changed && JSON.stringify(question.correctAnswers[answerHash]) !== JSON.stringify(newCorrectAnswers)) {
@@ -381,7 +382,7 @@ async function fixDupTopics() {
                 cursor = await cursor.continue()
                 continue
             }
-            const newName = normalizeTextNew(topic.name, true)
+            const newName = normalizeText(topic.name, true)
             const found = await transaction.objectStore('topics2').index('name').get(newName)
             if (found && found._id !== topic._id) {
                 console.warn('Найден дублирующий topic, он был удалён и объединён', found)
@@ -390,9 +391,9 @@ async function fixDupTopics() {
                     topic.id = found.id
                 }
                 if (topic.name !== found.name) {
-                    topic.name = normalizeTextNew(found.name, true)
+                    topic.name = normalizeText(found.name, true)
                 } else if (topic.name) {
-                    topic.name = normalizeTextNew(topic.name, true)
+                    topic.name = normalizeText(topic.name, true)
                 }
                 if (topic.code !== found.number) {
                     topic.code = found.number
@@ -792,10 +793,10 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
                     foundEE = json2
                     break
                 }
-            } else if (educationalElement.name === normalizeText(json2.name, true)) {
+            } else if (educationalElement.name === normalizeText_old(json2.name, true)) {
                 foundEE = json2
                 break
-            } else if (cut && normalizeText(json2.name, true).includes(educationalElement.name)) {
+            } else if (cut && normalizeText_old(json2.name, true).includes(educationalElement.name)) {
                 foundEE = json2
                 break
             }
@@ -810,7 +811,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
 
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 
-    foundEE.name = normalizeText(foundEE.name, true)
+    foundEE.name = normalizeText_old(foundEE.name, true)
 
     if (educationalElement.name !== foundEE.name) {
         if (educationalElement.name) {
@@ -969,7 +970,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     topic = {name: message.question.topics[0]}
                     if (message.new) {
                         let oldTopic = await db.getFromIndex('topics', 'name', message.question.topics[0])
-                        if (!oldTopic) oldTopic = await db.getFromIndex('topics', 'name', normalizeText(message.question.topics[0]))
+                        if (!oldTopic) oldTopic = await db.getFromIndex('topics', 'name', normalizeText_old(message.question.topics[0], true))
                         if (oldTopic) {
                             console.log('Найден id старой темы и подстроен под новую бд старый id')
                             topic._id = oldTopic._id
@@ -1165,7 +1166,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     topic = {name: message.topic}
                     if (message.new) {
                         let oldTopic = await db.getFromIndex('topics', 'name', message.question.topics[0])
-                        if (!oldTopic) oldTopic = await db.getFromIndex('topics', 'name', normalizeText(message.question.topics[0]))
+                        if (!oldTopic) oldTopic = await db.getFromIndex('topics', 'name', normalizeText_old(message.question.topics[0], true))
                         if (oldTopic) {
                             console.log('Найден id старой темы и подстроен под новую бд старый id')
                             topic._id = oldTopic._id

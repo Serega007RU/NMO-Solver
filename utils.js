@@ -25,7 +25,7 @@ async function toggleContentScript() {
         if (!scripts.length) {
             await chrome.scripting.registerContentScripts([{
                 id: 'content-script',
-                js: ['normalize-text.js', 'content-scripts/content-script.js'],
+                js: ['normalize-text.js', 'normalize-text_old.js', 'content-scripts/content-script.js'],
                 matches: ['https://*.edu.rosminzdrav.ru/*']
             }])
             if (self.window) {
