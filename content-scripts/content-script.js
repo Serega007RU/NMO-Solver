@@ -22,8 +22,13 @@ const statusDiv = document.createElement('div')
 
 
 function osReceiveStatus(message) {
+    if (message.settings) {
+        if (shadowRoot && message.settings.positionStatus !== settings?.positionStatus) {
+            setPosition(shadowRoot.querySelector('div > div'), message.settings.positionStatus)
+        }
+        settings = message.settings
+    }
     listenQuestions()
-    if (message.settings) settings = message.settings
     if (message.lastScore) lastScore = message.lastScore
     if (message.running) {
         stopRunning = false
@@ -301,7 +306,7 @@ async function start(collectAnswers) {
         if (document.querySelector('.v-window-closebox:not(.v-window-closebox-disabled)')?.parentElement?.textContent === 'Быстрый переход') {
             await attemptToClosePopups()
 
-            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
+            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -342,7 +347,7 @@ async function start(collectAnswers) {
             await waitNext
             // await globalObserver.waitFor('.c-table-clickable-cell')
         } else {
-            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
+            const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
 
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
@@ -364,8 +369,8 @@ async function start(collectAnswers) {
             return
         }
     } else if (!settings.selectionMethod && lastScore?.score?.includes('Оценка 2') && lastScore?.topic && !lastScore.topic.includes(' - Предварительное тестирование')) {
-        const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText)
-        if (topic === normalizeText(lastScore.topic)) {
+        const topic = normalizeText(document.querySelector('.v-label.v-widget.wrap-text').innerText, true)
+        if (topic === normalizeText(lastScore.topic, true)) {
             // Нажимаем закрыть вкладку
             await simulateClick(document.querySelector('.v-tabsheet-tabitem-selected .v-tabsheet-caption-close'))
             await wait(500)
@@ -537,7 +542,7 @@ function sendQuestion() {
             type: document.querySelector('.mat-card-question__type').textContent.trim(),
             answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeText(item.textContent)).sort()
         },
-        topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
+        topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent, true)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
     const questionNew = {
@@ -602,7 +607,7 @@ function sendResults() {
         resultsNew.push(question)
     }
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
-    sendObject.topic = normalizeText(topic)
+    sendObject.topic = normalizeText(topic, true)
     sendObject.results = results
     sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
     const topicNew = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
@@ -908,8 +913,7 @@ function addShadowRoot() {
     div.style.width = '300px'
     div.style.height = '100px'
     div.style.position = 'fixed'
-    div.style.bottom = '10px'
-    div.style.left = '10px'
+    setPosition(div, settings?.positionStatus)
     div.style.borderRadius = '15px'
     div.style.color = 'black'
     div.style.background = '#ffffff'
@@ -939,6 +943,39 @@ function addShadowRoot() {
     mainBody.append(statusDiv)
     div.append(mainBody)
     mainDiv.append(div)
+}
+
+function setPosition(div, side) {
+    div.style.removeProperty('bottom')
+    div.style.removeProperty('left')
+    div.style.removeProperty('top')
+    div.style.removeProperty('right')
+    div.style.removeProperty('transform')
+
+    if (side === 'bottom-left') {
+        div.style.bottom = '10px'
+        div.style.left = '10px'
+    } else if (side === 'bottom-right') {
+        div.style.bottom = '10px'
+        div.style.right = '10px'
+    } else if (side === 'bottom-center') {
+        div.style.bottom = '10px'
+        div.style.left = '50%'
+        div.style.transform = 'translateX(-50%)'
+    } else if (side === 'top-left') {
+        div.style.top = '10px'
+        div.style.left = '10px'
+    } else if (side === 'top-right') {
+        div.style.top = '10px'
+        div.style.right = '10px'
+    } else if (side === 'top-center') {
+        div.style.top = '10px'
+        div.style.left = '50%'
+        div.style.transform = 'translateX(-50%)'
+    } else {
+        div.style.bottom = '10px'
+        div.style.left = '10px'
+    }
 }
 
 class GlobalSelectorMutationObserver {

@@ -139,9 +139,11 @@ const LATIN_TO_VIEW_CYRILLIC_NEW = {
     // 883	U+0373	CD B3	ͳ	Greek Small Letter Archaic Sampi
     // исправление неверно использованных символах
     'Ţ': 'Т', // 354	U+0162	C5 A2	Ţ	Latin Capital Letter T With Cedilla
+    'і': 'i',
     'Ϗ': 'К', // Символ Ϗ (U+03CF) — это стилизованное заглавное написание греческого слова "και" (kai), что означает "и" в греческом языке.
     'º': '°', // градус цельсия
     '◦': '°',
+    '⁓': '~', // topic 678270b4b100db787f87d5ab, question 678270b5b100db787f89fb46
     '±': '+',
     '⁄': '/',
     '÷': '/',
@@ -150,6 +152,7 @@ const LATIN_TO_VIEW_CYRILLIC_NEW = {
     '˟': '×',
     '·': '×',
     '∙': '×',
+    '•': '×',
     'ɑ': 'а', //         U+03B1	GREEK SMALL LETTER ALPHA
     '⍺': 'а',
     '≥': '>',
@@ -168,8 +171,10 @@ const LATIN_TO_VIEW_CYRILLIC_NEW = {
     '∆': 'Δ',
     'Ι': 'I',
     'І': 'I',
-    'Υ': 'Y',
-    'Ɛ': 'Е',
+    'Υ': 'Y', // topic 678270b4b100db787f87d7bb, question 678270b5b100db787f8a4746
+    'υ': 'u', // topic 678270b4b100db787f87d7bb, question 678270b5b100db787f8a4746
+    'Ɛ': 'Е', // topic 678270b4b100db787f87eff9, question 678270b5b100db787f8b2be5
+    'ɛ': 'e', // topic 678270b4b100db787f87eff9, question 678270b5b100db787f8b2be5
     'ƞ': 'n', // topic 678270b4b100db787f87eb2e
     'א': 'α', // topic 678f37e8b4ae7993ad837a95
     '∂': 'δ', // topic 678270b4b100db787f87ee2b
@@ -178,11 +183,14 @@ const LATIN_TO_VIEW_CYRILLIC_NEW = {
     '٨': '⁸', // topic 67937edbd22aec2076351734
     '∩': '&', // topic 678270b4b100db787f87d288
     '£': 'f',  // topic 678270b4b100db787f87ee83
-    'Ʊ': 'U', // topic 678270b4b100db787f87e570
-    'Ӏ': 'I', // topic 678270b4b100db787f87dd61
+    'Ʊ': 'U', // topic 678270b4b100db787f87e570, question 678270b5b100db787f89daee
+    'ʊ': 'u', // topic 678270b4b100db787f87e570, question 678270b5b100db787f89daee
+    'Ӏ': 'I', // topic 678270b4b100db787f87dd61, question 678270b5b100db787f8b2633
+    'ӏ': 'i', // topic 678270b4b100db787f87dd61, question 678270b5b100db787f8b2633
     'ɣ': 'γ', // topic 678270b4b100db787f87cef5
     '◊': '×', // topic 678270b4b100db787f87e416
-    'Ј': 'J', // topic 678270b4b100db787f87dbc3
+    'Ј': 'J', // topic 678270b4b100db787f87dbc3, question 678270b5b100db787f8aea5f
+    'ј': 'j', // topic 678270b4b100db787f87dbc3, question 678270b5b100db787f8aea5f
     '': 'α', // topic 678ac335ce35d36b479c2113
     'ϭ': 'б', // topic 678ac335ce35d36b479c2113
     '∕': '/', // topic 678270b4b100db787f87d6e8
@@ -194,10 +202,13 @@ const LATIN_TO_VIEW_CYRILLIC_NEW = {
     '': 'β', // topic 678270b4b100db787f87d9ed
     '': 'Δ', // topic 678270b4b100db787f87d4a8
     '': '×', // topic 67a782682ab40dd958d7cc77
+    '': '↑',
+    '': '↓', // question 678270b4b100db787f8947a1, topics 678270b4b100db787f87ecbc, 678270b4b100db787f87edfb
+    '': '+' // question 678270b5b100db787f8ae875, topic 678270b4b100db787f87e39b
 }
 
 // список разрешённых символов
-const regexSymbols = /[^a-zA-Zа-яА-ЯёЁ0-9 .,!?'"\/\\+\-_×*%&@#;:(){}\[\]<>=|^~$№°⁰¹²³⁴⁵⁶⁷⁸⁹₽λαβΔγμδσΩωτεπνφΣθ→↑↓←≈∞√†]/gu // /u для .test а /gu для .replace
+const regexSymbols = /[^a-zA-Zа-яА-ЯёЁ0-9 .,!?'"\/\\+\-_×*%&@#;:(){}\[\]<>=|^~$№°⁰¹²³⁴⁵⁶⁷⁸⁹®₽λαβΔγμδσΩωτεπνφιΣθ→↑↓←≈∞√†]/gu // /u для .test а /gu для .replace
 
 const regexWords = /\b(?=[a-zA-Z]*[а-яА-ЯёЁ])(?=[а-яА-ЯёЁ]*[a-zA-Z])\w+\b/
 const regexWord = /(?=.*\p{Script=Latin})(?=.*\p{Script=Cyrillic})/u

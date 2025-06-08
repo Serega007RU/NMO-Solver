@@ -5,7 +5,7 @@ document.querySelector('#version').textContent = 'Версия ' + chrome.runtim
 
 let db, settings
 async function init() {
-    db = await idb.openDB('nmo', 19)
+    db = await idb.openDB('nmo', 20)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -125,6 +125,10 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             }
         }
         settings.sendResults = event.target.checked
+        onChangedSettings()
+    })
+    document.querySelector('#PositionStatus').addEventListener('change', (event) => {
+        settings.positionStatus = event.target.value
         onChangedSettings()
     })
 
@@ -350,6 +354,7 @@ async function restoreOptions() {
     else document.querySelector('.export-import').style.display = 'none'
     document.querySelector('#SendResults').disabled = settings.offlineMode
     document.querySelector('#SendResults').checked = settings.sendResults
+    document.querySelector('#PositionStatus').value = settings.positionStatus
 
     await restoreTopics()
 }

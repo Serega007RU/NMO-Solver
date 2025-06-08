@@ -20,7 +20,7 @@ let lastScore
 
 class TopicError extends Error {}
 
-const dbVersion = 19
+const dbVersion = 20
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -62,7 +62,8 @@ async function init() {
                 timeoutReloadTabMin: 15000,
                 timeoutReloadTabMax: 90000,
                 offlineMode: false,
-                sendResults: true
+                sendResults: true,
+                positionStatus: 'bottom-left'
             }, 'settings')
             return
         }
@@ -76,6 +77,7 @@ async function init() {
         }
 
         if (oldVersion <= 14) {
+            console.log('Этап обновления с версии 14 на 15')
             await db.deleteObjectStore('questions')
             await db.deleteObjectStore('topics')
             const questions = db.createObjectStore('questions', {autoIncrement: true, keyPath: '_id'})
@@ -89,6 +91,7 @@ async function init() {
         }
 
         if (oldVersion <= 15) {
+            console.log('Этап обновления с версии 15 на 16')
             transaction.objectStore('topics').createIndex('dirty', 'dirty')
             transaction.objectStore('topics').createIndex('inputIndex', 'inputIndex')
             transaction.objectStore('topics').createIndex('completed, inputIndex', ['completed', 'inputIndex'])
@@ -100,12 +103,28 @@ async function init() {
         }
 
         if (oldVersion <= 16) {
+            console.log('Этап обновления с версии 16 на 17')
             settings = await transaction.objectStore('other').get('settings')
             settings.sendResults = true
             await transaction.objectStore('other').put(settings, 'settings')
         }
 
+        if (oldVersion <= 17) {
+            console.log('Этап обновления с версии 17 на 18')
+            console.log('очистка topics')
+            await transaction.objectStore('topics').clear()
+            console.log('очистка questions')
+            await transaction.objectStore('questions').clear()
+        }
+
         if (oldVersion <= 18) {
+            console.log('Этап обновления с версии 18 на 19')
+            settings = await transaction.objectStore('other').get('settings')
+            settings.positionStatus = 'bottom-left'
+            await transaction.objectStore('other').put(settings, 'settings')
+        }
+
+        if (oldVersion <= 19) {
             const questions = db.createObjectStore('questions2', {autoIncrement: true, keyPath: '_id'})
             questions.createIndex('question', 'question', {unique: true})
             questions.createIndex('topics', 'topics', {multiEntry: true})
@@ -362,7 +381,7 @@ async function fixDupTopics() {
                 cursor = await cursor.continue()
                 continue
             }
-            const newName = normalizeTextNew(topic.name)
+            const newName = normalizeTextNew(topic.name, true)
             const found = await transaction.objectStore('topics2').index('name').get(newName)
             if (found && found._id !== topic._id) {
                 console.warn('Найден дублирующий topic, он был удалён и объединён', found)
@@ -371,9 +390,9 @@ async function fixDupTopics() {
                     topic.id = found.id
                 }
                 if (topic.name !== found.name) {
-                    topic.name = normalizeTextNew(found.name)
+                    topic.name = normalizeTextNew(found.name, true)
                 } else if (topic.name) {
-                    topic.name = normalizeTextNew(topic.name)
+                    topic.name = normalizeTextNew(topic.name, true)
                 }
                 if (topic.code !== found.number) {
                     topic.code = found.number
@@ -773,10 +792,10 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
                     foundEE = json2
                     break
                 }
-            } else if (educationalElement.name === normalizeText(json2.name)) {
+            } else if (educationalElement.name === normalizeText(json2.name, true)) {
                 foundEE = json2
                 break
-            } else if (cut && normalizeText(json2.name).includes(educationalElement.name)) {
+            } else if (cut && normalizeText(json2.name, true).includes(educationalElement.name)) {
                 foundEE = json2
                 break
             }
@@ -791,7 +810,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
 
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 
-    foundEE.name = normalizeText(foundEE.name)
+    foundEE.name = normalizeText(foundEE.name, true)
 
     if (educationalElement.name !== foundEE.name) {
         if (educationalElement.name) {
@@ -989,7 +1008,6 @@ chrome.runtime.onConnect.addListener((port) => {
                     question.answers[answerHash] = message.question.answers
                     // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                     if (question.topics.length > 1 || question.topics[0] !== topic._id) {
-                        if (message.new) console.warn('test1')
                         for (const aH of Object.keys(question.answers)) {
                             if (!question.answers[aH].topics) {
                                 question.answers[aH].topics = [...question.topics]
@@ -1055,7 +1073,6 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                     // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                     if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[answerHash].topics?.includes(topic._id)) {
-                        if (message.new) console.warn('test2')
                         for (const aH of Object.keys(question.answers)) {
                             if (!question.answers[aH].topics) {
                                 question.answers[aH].topics = [...question.topics]
@@ -1260,7 +1277,6 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                             // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                             if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0]].topics?.includes(topic._id)) {
-                                if (message.new) console.warn('test3')
                                 for (const aH of Object.keys(question.answers)) {
                                     if (!question.answers[aH].topics) {
                                         question.answers[aH].topics = [...question.topics]
@@ -1364,7 +1380,6 @@ chrome.runtime.onConnect.addListener((port) => {
                         } else if (!fakeCorrectAnswers) {
                             // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                             if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0].answerHash].topics?.includes(topic._id)) {
-                                if (message.new) console.warn('test4')
                                 for (const aH of Object.keys(question.answers)) {
                                     if (!question.answers[aH].topics) {
                                         question.answers[aH].topics = [...question.topics]
@@ -1533,7 +1548,7 @@ function getCombinations(items, multi) {
 async function sendResultsToServer(results, topic) {
     if (settings.offlineMode || !settings.sendResults) return
     try {
-        const response = await fetch('https://serega007.ru/api/v2/saveResults', {
+        const response = await fetch('https://serega007.ru/api/v3/saveResults', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({results, topic}),
@@ -1551,7 +1566,7 @@ async function sendResultsToServer(results, topic) {
 async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/api/v2/getQuestionByName', {
+        const response = await fetch('https://serega007.ru/api/v3/getQuestionByName', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: question}),
@@ -1571,7 +1586,7 @@ async function getAnswersByQuestionFromServer(question) {
 async function getAnswersByTopicFromServer(topicName) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/api/v2/getQuestionsByTopic', {
+        const response = await fetch('https://serega007.ru/api/v3/getQuestionsByTopic', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: topicName}),

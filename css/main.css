@@ -500,6 +500,29 @@ fieldset div {
 	cursor: not-allowed;
 }
 
+.toggle-pill-color select {
+	width: 180px;
+	padding: 2px 5px;
+	border: 2px solid #ccdbfd;
+	border-radius: 5px;
+	background-color: #fff;
+	font-size: 14px;
+	color: #212121;
+	cursor: pointer;
+	outline: none;
+	transition: all 0.3s ease;
+}
+
+.toggle-pill-color select:hover {
+	border-color: #abc4ff;
+	background-color: #f8f9fa;
+}
+
+.toggle-pill-color select:focus {
+	border-color: #abc4ff;
+	box-shadow: 0 0 0 2px rgba(204, 219, 253, 0.3);
+}
+
 ::-webkit-scrollbar-button {
 	background-repeat: no-repeat;
 	width: 5px;
