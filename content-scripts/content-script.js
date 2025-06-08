@@ -418,6 +418,9 @@ async function start(collectAnswers) {
             } else if (pageName === 'Предварительное тестирование') {
                 hasSuccessTest = true
             } else if (settings.goodScore) {
+                const date = variantText.match(/(\d{1,2}[\.\/]){2,2}(\d{2,4})?/g)?.[0]
+                const dt = new Date(date?.replace(/(\d{2})\.(\d{2})\.(\d{4})/,'$3-$2-$1'))
+                if (Date.now() - dt.getTime() > 2592000000) continue
                 if (variantText.includes('оценка 3')) {
                     countGood += 1
                 } else if (variantText.includes('оценка 4')) {
@@ -425,7 +428,7 @@ async function start(collectAnswers) {
                 } else if (variantText.includes('оценка 5')) {
                     countGood += 60
                 }
-                if (countGood >= 60) {
+                if (countGood >= 240) {
                     hasSuccessTest = true
                     hasGoodScore = true
                 }
@@ -537,9 +540,19 @@ function sendQuestion() {
         topics: [normalizeText((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent)],
         lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
     }
+    const questionNew = {
+        question: normalizeTextNew(document.querySelector('.question-title-text').textContent),
+        answers: {
+            type: document.querySelector('.mat-card-question__type').textContent.trim(),
+            answers: Array.from(document.querySelectorAll('.question-inner-html-text')).map(item => normalizeTextNew(item.textContent)).sort()
+        },
+        topics: [normalizeTextNew((document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent, true)],
+        lastOrder: document.querySelector('.question-info-questionCounter').textContent.trim().match(/\d+/)[0]
+    }
     cachedMessage = {}
     cachedMessage.question = question
     statusDiv.textContent = 'Обращение к базе данных с ответами...'
+    port.postMessage({question: questionNew, new: true})
     port.postMessage({question})
 }
 
@@ -561,7 +574,9 @@ function sendResults() {
     statusDiv.textContent = 'Сохранение результатов теста...'
     const correctAnswersElements = document.querySelectorAll('.questionList-item')
     const sendObject = {}
+    const sendObjectNew = {new: true}
     const results = []
+    const resultsNew = []
     for (const el of correctAnswersElements) {
         const question = {
             question: normalizeText(el.querySelector('.questionList-item-content-title').textContent),
@@ -574,10 +589,27 @@ function sendResults() {
         }
         results.push(question)
     }
+    for (const el of correctAnswersElements) {
+        const question = {
+            question: normalizeTextNew(el.querySelector('.questionList-item-content-title').textContent),
+            answers: {
+                type: el.querySelector('.questionList-item-content-question-type')?.textContent?.trim?.(),
+                usedAnswers: Array.from(el.querySelectorAll('.questionList-item-content-answer-text')).map(item => normalizeTextNew(item.textContent)).sort()
+            },
+            correct: Boolean(el.querySelector('[svgicon="correct"]')),
+            lastOrder: el.querySelector('.questionList-item-number').textContent.trim()
+        }
+        resultsNew.push(question)
+    }
     const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
     sendObject.topic = normalizeText(topic)
     sendObject.results = results
     sendObject.lastScore = {topic, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
+    const topicNew = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent
+    sendObjectNew.topic = normalizeTextNew(topicNew, true)
+    sendObjectNew.results = resultsNew
+    sendObjectNew.lastScore = {topic: topicNew, score: document.querySelector('.quiz-info-col-indicators')?.textContent?.replaceAll('\n', ' ')}
+    port.postMessage(sendObjectNew)
     port.postMessage(sendObject)
 
     if (settings.mode === 'manual' || !running || !started) return

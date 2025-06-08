@@ -20,7 +20,7 @@ let lastScore
 
 class TopicError extends Error {}
 
-const dbVersion = 17
+const dbVersion = 19
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -103,6 +103,22 @@ async function init() {
             settings = await transaction.objectStore('other').get('settings')
             settings.sendResults = true
             await transaction.objectStore('other').put(settings, 'settings')
+        }
+
+        if (oldVersion <= 18) {
+            const questions = db.createObjectStore('questions2', {autoIncrement: true, keyPath: '_id'})
+            questions.createIndex('question', 'question', {unique: true})
+            questions.createIndex('topics', 'topics', {multiEntry: true})
+            const topics = db.createObjectStore('topics2', {autoIncrement: true, keyPath: '_id'})
+            topics.createIndex('name', 'name')
+            // 0 - не выполнено, 1 - выполнено, 2 - есть ошибки
+            topics.createIndex('completed', 'completed')
+            // 1 - эта тема внесена вручную пользователем
+            topics.createIndex('dirty', 'dirty')
+            topics.createIndex('inputIndex', 'inputIndex')
+            topics.createIndex('completed, inputIndex', ['completed', 'inputIndex'])
+            topics.createIndex('code', 'code', {unique: true})
+            topics.createIndex('id', 'id', {unique: true})
         }
 
         console.log('Обновление базы данных завершено')
@@ -196,7 +212,7 @@ self.fixDupQuestions = fixDupQuestions
 async function fixDupQuestions() {
     let transaction
     try {
-        transaction = db.transaction('questions', 'readwrite')
+        transaction = db.transaction('questions2', 'readwrite')
 
         {
             console.log('этап 1')
@@ -206,7 +222,7 @@ async function fixDupQuestions() {
 
                 let changed = false
 
-                const newQuestion = normalizeText(question.question)
+                const newQuestion = normalizeTextNew(question.question)
                 if (question.question !== newQuestion) {
                     console.log('Исправлено название', question)
                     question.question = newQuestion
@@ -216,7 +232,7 @@ async function fixDupQuestions() {
                 for (const answerHash of Object.keys(question.answers)) {
                     const newAnswers = []
                     for (const answer of question.answers[answerHash].answers) {
-                        newAnswers.push(normalizeText(answer))
+                        newAnswers.push(normalizeTextNew(answer))
                     }
                     newAnswers.sort()
                     const newAnswer = question.answers[answerHash]
@@ -240,7 +256,7 @@ async function fixDupQuestions() {
                     if (question.correctAnswers[answerHash]) {
                         const newCorrectAnswers = []
                         for (const answer of question.correctAnswers[answerHash]) {
-                            newCorrectAnswers.push(normalizeText(answer))
+                            newCorrectAnswers.push(normalizeTextNew(answer))
                         }
                         newCorrectAnswers.sort()
                         if (!changed && JSON.stringify(question.correctAnswers[answerHash]) !== JSON.stringify(newCorrectAnswers)) {
@@ -336,8 +352,8 @@ self.fixDupTopics = fixDupTopics
 async function fixDupTopics() {
     let transaction
     try {
-        transaction = db.transaction(['questions', 'topics'], 'readwrite')
-        let cursor = await transaction.objectStore('topics').openCursor()
+        transaction = db.transaction(['questions2', 'topics2'], 'readwrite')
+        let cursor = await transaction.objectStore('topics2').openCursor()
         while (cursor) {
             const topic = cursor.value
             if (!topic.name) {
@@ -346,25 +362,25 @@ async function fixDupTopics() {
                 cursor = await cursor.continue()
                 continue
             }
-            const newName = normalizeText(topic.name)
-            const found = await transaction.objectStore('topics').index('name').get(newName)
+            const newName = normalizeTextNew(topic.name)
+            const found = await transaction.objectStore('topics2').index('name').get(newName)
             if (found && found._id !== topic._id) {
                 console.warn('Найден дублирующий topic, он был удалён и объединён', found)
-                await transaction.objectStore('topics').delete(found._id)
+                await transaction.objectStore('topics2').delete(found._id)
                 if (topic.id !== found.id) {
                     topic.id = found.id
                 }
                 if (topic.name !== found.name) {
-                    topic.name = normalizeText(found.name)
+                    topic.name = normalizeTextNew(found.name)
                 } else if (topic.name) {
-                    topic.name = normalizeText(topic.name)
+                    topic.name = normalizeTextNew(topic.name)
                 }
                 if (topic.code !== found.number) {
                     topic.code = found.number
                 }
                 await cursor.update(topic)
 
-                let cursor2 = await transaction.objectStore('questions').index('topics').openCursor(found._id)
+                let cursor2 = await transaction.objectStore('questions2').index('topics').openCursor(found._id)
                 while (cursor2) {
                     const question = cursor2.value
                     question.topics.splice(question.topics.indexOf(found._id), 1)
@@ -626,6 +642,7 @@ async function checkOrGetTopic() {
                 if (error instanceof TopicError) {
                     if (error.message === 'Уже пройдено') {
                         educationalElement.completed = 1
+                        delete educationalElement.dirty
                     } else {
                         educationalElement.error = error.message
                         educationalElement.completed = 2
@@ -922,7 +939,7 @@ chrome.runtime.onConnect.addListener((port) => {
             let error
             lastScore = null
             let searchedOnServer
-            let topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
+            let topic = await db.getFromIndex(message.new ? 'topics2' : 'topics', 'name', message.question.topics[0])
             if (!topic || topic.dirty) {
                 searchedOnServer = true
                 const result = await getAnswersByTopicFromServer(message.question.topics[0])
@@ -931,14 +948,24 @@ chrome.runtime.onConnect.addListener((port) => {
                     topic = result.topic
                 } else if (!topic) {
                     topic = {name: message.question.topics[0]}
-                    topic._id = await db.put('topics', topic)
-                    console.log('Внесена новая тема в базу', message.question.topics[0])
+                    if (message.new) {
+                        let oldTopic = await db.getFromIndex('topics', 'name', message.question.topics[0])
+                        if (!oldTopic) oldTopic = await db.getFromIndex('topics', 'name', normalizeText(message.question.topics[0]))
+                        if (oldTopic) {
+                            console.log('Найден id старой темы и подстроен под новую бд старый id')
+                            topic._id = oldTopic._id
+                        }
+                        topic._id = await db.put('topics2', topic)
+                    } else {
+                        topic._id = await db.put('topics', topic)
+                    }
+                    if (message.new) console.log('Внесена новая тема в базу', message.question.topics[0])
                 } else if (topic.dirty && result && !result.error) {
                     delete topic.dirty
-                    await db.put('topics', topic)
+                    await db.put(message.new ? 'topics2' : 'topics', topic)
                 }
             }
-            let question = await db.getFromIndex('questions', 'question', message.question.question)
+            let question = await db.getFromIndex(message.new ? 'questions2' : 'questions', 'question', message.question.question)
             if (!question) {
                 searchedOnServer = true
                 const result = await getAnswersByQuestionFromServer(message.question.question)
@@ -960,6 +987,16 @@ chrome.runtime.onConnect.addListener((port) => {
                 // добавление другого варианта ответов (в одном вопросе может быть несколько вариаций ответов с разными ответами)
                 if (!question.answers[answerHash]) {
                     question.answers[answerHash] = message.question.answers
+                    // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                    if (question.topics.length > 1 || question.topics[0] !== topic._id) {
+                        if (message.new) console.warn('test1')
+                        for (const aH of Object.keys(question.answers)) {
+                            if (!question.answers[aH].topics) {
+                                question.answers[aH].topics = [...question.topics]
+                            }
+                        }
+                        question.answers[answerHash].topics = [topic._id]
+                    }
                     if (!question.lastOrder) question.lastOrder = {}
                     question.lastOrder[message.question.lastOrder] = answerHash
                     const multi = question.answers[answerHash].type.toLowerCase().includes('несколько')
@@ -985,15 +1022,15 @@ chrome.runtime.onConnect.addListener((port) => {
                                 }
                             }
                         }
-                        console.log('попробуем использовать правильные ответы которые есть', question)
+                        if (message.new) console.log('попробуем использовать правильные ответы которые есть', question)
                     } else {
                         // предлагаем рандомный предполагаемый вариант правильного ответа
                         const combination = question.answers[answerHash].combinations[Math.floor(Math.random()*question.answers[answerHash].combinations.length)]
                         answers = combination.map(index => question.answers[answerHash].answers[index])
-                        console.log('добавлены новые варианты ответов', question)
+                        if (message.new) console.log('добавлены новые варианты ответов', question)
                     }
                     question.answers[answerHash].lastUsedAnswers = answers
-                    port?.postMessage({answers, question, answerHash, error})
+                    if (!message.new) port?.postMessage({answers, question, answerHash, error})
                 // если найден и вопрос и к нему вариант ответов
                 } else {
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
@@ -1010,28 +1047,39 @@ chrome.runtime.onConnect.addListener((port) => {
                     } else if (question.answers[answerHash].type && message.question.answers.type && question.answers[answerHash].type.toLowerCase().includes('несколько') !== message.question.answers.type.toLowerCase().includes('несколько')) {
                         question.answers[answerHash].type = message.question.answers.type
                         if (question.correctAnswers[answerHash]?.length > 1) {
-                            console.warn('Тип вопроса не соответствует с тем что было в бд, возможно портал изменил ответ, правильные ответы были удалены (заново сгенерированы комбинации)')
+                            if (message.new) console.warn('Тип вопроса не соответствует с тем что было в бд, возможно портал изменил ответ, правильные ответы были удалены (заново сгенерированы комбинации)')
                             delete question.correctAnswers[answerHash]
                             const multi = question.answers[answerHash].type?.toLowerCase()?.includes('несколько')
                             question.answers[answerHash].combinations = getCombinations(Array.from(question.answers[answerHash].answers.keys()), multi)
                         }
                     }
+                    // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                    if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[answerHash].topics?.includes(topic._id)) {
+                        if (message.new) console.warn('test2')
+                        for (const aH of Object.keys(question.answers)) {
+                            if (!question.answers[aH].topics) {
+                                question.answers[aH].topics = [...question.topics]
+                            }
+                        }
+                        if (!question.answers[answerHash].topics?.length) question.answers[answerHash].topics = []
+                        question.answers[answerHash].topics.push(topic._id)
+                    }
                     // отправляем правильный ответ если он есть
                     if (question.correctAnswers[answerHash]?.length) {
-                        console.log('отправлен ответ', question)
-                        port?.postMessage({answers: question.correctAnswers[answerHash], question, correct: true, answerHash})
+                        if (message.new) console.log('отправлен ответ', question)
+                        if (!message.new) port?.postMessage({answers: question.correctAnswers[answerHash], question, correct: true, answerHash})
                     // если нет правильных ответов, предлагаем рандомный предполагаемый вариант правильного ответа
                     } else {
                         let combination = question.answers[answerHash].combinations?.[Math.floor(Math.random()*question.answers[answerHash].combinations?.length)]
                         let answers = []
                         if (question.answers[answerHash].lastUsedAnswers) {
-                            console.log('даны те ответы что расширение раньше предлагало', question)
+                            if (message.new) console.log('даны те ответы что расширение раньше предлагало', question)
                             answers = question.answers[answerHash].lastUsedAnswers
                         } else if (combination?.length) {
-                            console.log('предложен другой вариант ответа', question)
+                            if (message.new) console.log('предложен другой вариант ответа', question)
                             answers = combination.map(index => question.answers[answerHash].answers[index])
                         } else {
-                            console.warn('Нет вариантов ответов!')
+                            if (message.new) console.warn('Нет вариантов ответов!')
                             // если уж на то пошло, заново генерируем комбинации
                             const multi = question.answers[answerHash].type?.toLowerCase()?.includes('несколько')
                             question.answers[answerHash].combinations = getCombinations(Array.from(question.answers[answerHash].answers.keys()), multi)
@@ -1056,20 +1104,20 @@ chrome.runtime.onConnect.addListener((port) => {
                                         }
                                     }
                                 }
-                                console.log('попробуем использовать правильные ответы которые есть (заново сгенерированы комбинации)', question)
+                                if (message.new) console.log('попробуем использовать правильные ответы которые есть (заново сгенерированы комбинации)', question)
                             } else {
                                 answers = combination.map(index => question.answers[answerHash].answers[index])
-                                console.log('предложен другой вариант ответа (заново сгенерированы комбинации)', question)
+                                if (message.new) console.log('предложен другой вариант ответа (заново сгенерированы комбинации)', question)
                             }
                         }
                         question.answers[answerHash].lastUsedAnswers = answers
-                        port?.postMessage({answers, question, answerHash, error})
+                        if (!message.new) port?.postMessage({answers, question, answerHash, error})
                     }
                 }
                 if (!question.topics.includes(topic._id)) {
                     question.topics.push(topic._id)
                 }
-                await db.put('questions', question)
+                await db.put(message.new ? 'questions2' : 'questions', question)
             // добавление вопроса с его вариантами ответов
             } else {
                 question = message.question
@@ -1082,27 +1130,37 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.lastOrder = {[question.lastOrder]: answerHash}
                 question.correctAnswers = {}
                 question.topics = [topic._id]
-                console.log('добавлен новый вопрос', question)
+                if (message.new) console.log('добавлен новый вопрос', question)
                 question.answers[answerHash].lastUsedAnswers = answers
-                port?.postMessage({answers, question, answerHash, error})
-                await db.put('questions', question)
+                if (!message.new) port?.postMessage({answers, question, answerHash, error})
+                await db.put(message.new ? 'questions2' : 'questions', question)
             }
         // сохранение результатов теста с правильными и не правильными ответами
         } else if (message.results) {
             let stats = {correct: 0, taken: 0, ignored: 0}
 
-            let topic = await db.getFromIndex('topics', 'name', message.topic)
+            let topic = await db.getFromIndex(message.new ? 'topics2' : 'topics', 'name', message.topic)
             if (!topic || topic.dirty) {
                 const result = await getAnswersByTopicFromServer(message.topic)
                 if (result?.topic) {
                     topic = result.topic
                 } else if (!topic) {
                     topic = {name: message.topic}
-                    topic._id = await db.put('topics', topic)
-                    console.log('Внесена новая тема в базу', message.topic)
+                    if (message.new) {
+                        let oldTopic = await db.getFromIndex('topics', 'name', message.question.topics[0])
+                        if (!oldTopic) oldTopic = await db.getFromIndex('topics', 'name', normalizeText(message.question.topics[0]))
+                        if (oldTopic) {
+                            console.log('Найден id старой темы и подстроен под новую бд старый id')
+                            topic._id = oldTopic._id
+                        }
+                        topic._id = await db.put('topics2', topic)
+                    } else {
+                        topic._id = await db.put('topics', topic)
+                    }
+                    if (message.new) console.log('Внесена новая тема в базу', message.topic)
                 } else if (topic.dirty && result && !result.error) {
                     delete topic.dirty
-                    await db.put('topics', topic)
+                    await db.put(message.new ? 'topics2' : 'topics', topic)
                 }
             }
             lastScore = message.lastScore
@@ -1110,7 +1168,7 @@ chrome.runtime.onConnect.addListener((port) => {
             const toSendResults = []
 
             for (const resultQuestion of message.results) {
-                let question = await db.getFromIndex('questions', 'question', resultQuestion.question)
+                let question = await db.getFromIndex(message.new ? 'questions2' : 'questions', 'question', resultQuestion.question)
                 // если мы получили ответ, но в бд его нет, сохраняем если этот ответ правильный
                 if (!question) {
                     if (resultQuestion.correct) {
@@ -1120,11 +1178,11 @@ chrome.runtime.onConnect.addListener((port) => {
                             topics: [topic._id],
                             correctAnswers: {'unknown': resultQuestion.answers.usedAnswers}
                         }
-                        question._id = await db.put('questions', question)
-                        console.log('записан новый ответ с новым вопросом', question)
+                        question._id = await db.put(message.new ? 'questions2' : 'questions', question)
+                        if (message.new) console.log('записан новый ответ с новым вопросом', question)
                         stats.correct++
                     } else {
-                        console.log('пропущено', resultQuestion)
+                        if (message.new) console.log('пропущено', resultQuestion)
                         stats.ignored++
                     }
                 // сохраняем правильный ответ или учитываем не правильный ответ
@@ -1152,7 +1210,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                             if (wrongVariant) {
                                 if (foundAnswerHash) {
-                                    console.warn('lastOrder не соответствует вариантам ответов что сохранены в бд', question, resultQuestion)
+                                    if (message.new) console.warn('lastOrder не соответствует вариантам ответов что сохранены в бд', question, resultQuestion)
                                 }
                                 continue
                             }
@@ -1162,7 +1220,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                         }
                         if (matchAnswers.length > 1) {
-                            console.warn('Найдено больше 1-го варианта ответов, не возможно сохранить правильный ответ', resultQuestion, question)
+                            if (message.new) console.warn('Найдено больше 1-го варианта ответов, не возможно сохранить правильный ответ', resultQuestion, question)
                             stats.ignored++
                         } else if (!matchAnswers.length) {
                             const oldAnswers = JSON.stringify(question.correctAnswers['unknown'])
@@ -1181,9 +1239,9 @@ chrome.runtime.onConnect.addListener((port) => {
                                             question.answers[matchAnswers[0]].fakeCorrectAnswers = 0
                                         }
                                         question.answers[matchAnswers[0]].fakeCorrectAnswers++
-                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Возможно это сбой какой-то', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
+                                        if (message.new) console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Возможно это сбой какой-то', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
                                     } else {
-                                        console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Были перезаписаны правильные ответы', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
+                                        if (message.new) console.warn('Результат с правильными ответами не соответствует с бд, в бд были не правильные ответы? Были перезаписаны правильные ответы', question, resultQuestion, JSON.stringify(question.correctAnswers[matchAnswers[0]]), JSON.stringify(resultQuestion.answers.usedAnswers))
                                         changedAnswers = true
                                         question.correctAnswers[matchAnswers[0]] = resultQuestion.answers.usedAnswers
                                     }
@@ -1199,6 +1257,17 @@ chrome.runtime.onConnect.addListener((port) => {
                             if (question.answers[matchAnswers[0]].combinations) {
                                 changedCombinations = true
                                 delete question.answers[matchAnswers[0]].combinations
+                            }
+                            // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                            if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0]].topics?.includes(topic._id)) {
+                                if (message.new) console.warn('test3')
+                                for (const aH of Object.keys(question.answers)) {
+                                    if (!question.answers[aH].topics) {
+                                        question.answers[aH].topics = [...question.topics]
+                                    }
+                                }
+                                if (!question.answers[matchAnswers[0]].topics?.length) question.answers[matchAnswers[0]].topics = []
+                                question.answers[matchAnswers[0]].topics.push(topic._id)
                             }
                             if (question.correctAnswers['unknown']) {
                                 for (const answer of resultQuestion.answers.usedAnswers) {
@@ -1225,12 +1294,12 @@ chrome.runtime.onConnect.addListener((port) => {
                         // если у нас есть правильный ответ, но мы получили что этот ответ НЕ правильный, то значит у нас в бд неверные данные, удаляем ответ и генерируем комбинации для подбора ответа
                         if (question.correctAnswers[foundAnswerHash]) {
                             if (JSON.stringify(question.correctAnswers[foundAnswerHash]) !== JSON.stringify(resultQuestion.answers.usedAnswers)) {
-                                console.warn('На вопрос были даны НЕ правильные ответы не смотря на то что в бд есть ПРАВИЛЬНЫЕ ответы', JSON.stringify(question.correctAnswers[foundAnswerHash]), JSON.stringify(resultQuestion.answers.usedAnswers), question)
+                                if (message.new) console.warn('На вопрос были даны НЕ правильные ответы не смотря на то что в бд есть ПРАВИЛЬНЫЕ ответы', JSON.stringify(question.correctAnswers[foundAnswerHash]), JSON.stringify(resultQuestion.answers.usedAnswers), question)
                             } else {
                                 // TODO иногда какого-то хрена правильные ответы выдаются как неверные, мы пробуем костылём во второй раз ответить
                                 //  но если и во второй раз не прокатит то удаляем правилные ответы и пробуем методом подбора подобрать правильные ответы
                                 if (!question.answers[foundAnswerHash].fakeCorrectAnswers || question.answers[foundAnswerHash].fakeCorrectAnswers <= 0) {
-                                    console.warn('Пока какой-то причине НМО посчитал правильные ответы НЕ правильными, возможно это сбой какой-то', question, resultQuestion)
+                                    if (message.new) console.warn('Пока какой-то причине НМО посчитал правильные ответы НЕ правильными, возможно это сбой какой-то', question, resultQuestion)
                                     changedCombinations = true
                                     fakeCorrectAnswers = true
                                     if (!question.answers[foundAnswerHash].fakeCorrectAnswers || question.answers[foundAnswerHash].fakeCorrectAnswers === true) {
@@ -1238,7 +1307,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                     }
                                     question.answers[foundAnswerHash].fakeCorrectAnswers++
                                 } else {
-                                    console.warn('Похоже что правильные ответы на самом деле НЕ правильные (правильный ответ удалён, заново сгенерированы комбинации)')
+                                    if (message.new) console.warn('Похоже что правильные ответы на самом деле НЕ правильные (правильный ответ удалён, заново сгенерированы комбинации)')
                                     changedAnswers = true
                                     changedCombinations = true
                                     fakeCorrectAnswers = true
@@ -1282,17 +1351,28 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                         }
                         if (matchAnswers.length > 1) {
-                            console.warn('Найдено больше 1-го варианта ответов, не возможно сохранить использованную комбинацию', resultQuestion, question)
+                            if (message.new) console.warn('Найдено больше 1-го варианта ответов, не возможно сохранить использованную комбинацию', resultQuestion, question)
                             stats.ignored++
                         } else if (!matchAnswers.length) {
                             if (foundAnswerHash) {
                                 // TODO возможно тут следует заново генерировать комбинации, правда это чревато цикличным подбором ответов
-                                console.warn('пропущено, не найдена комбинация по заданному lastOrder', resultQuestion, question, question.lastOrder)
+                                if (message.new) console.warn('пропущено, не найдена комбинация по заданному lastOrder', resultQuestion, question, question.lastOrder)
                             } else {
-                                console.warn('пропущено, не найдена комбинация', resultQuestion, question)
+                                if (message.new) console.warn('пропущено, не найдена комбинация', resultQuestion, question)
                             }
                             stats.ignored++
                         } else if (!fakeCorrectAnswers) {
+                            // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
+                            if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0].answerHash].topics?.includes(topic._id)) {
+                                if (message.new) console.warn('test4')
+                                for (const aH of Object.keys(question.answers)) {
+                                    if (!question.answers[aH].topics) {
+                                        question.answers[aH].topics = [...question.topics]
+                                    }
+                                }
+                                if (!question.answers[matchAnswers[0].answerHash].topics?.length) question.answers[matchAnswers[0].answerHash].topics = []
+                                question.answers[matchAnswers[0].answerHash].topics.push(topic._id)
+                            }
                             // удаляем ту комбинацию которая была использована при попытке
                             changedCombinations = true
                             question.answers[matchAnswers[0].answerHash].combinations.splice(matchAnswers[0].index, 1)
@@ -1300,7 +1380,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         }
                     } else {
                         notAnswered = true
-                        console.log('пропущено, не предоставлены ответы', resultQuestion, question)
+                        if (message.new) console.log('пропущено, не предоставлены ответы', resultQuestion, question)
                         stats.ignored++
                     }
                     if (foundAnswerHash) {
@@ -1328,9 +1408,9 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
 
                     if (changedAnswers || changedCombinations || changedOther) {
-                        await db.put('questions', question)
+                        await db.put(message.new ? 'questions2' : 'questions', question)
                         if (changedAnswers) {
-                            console.log('записан или изменён новый ответ', resultQuestion, question)
+                            if (message.new) console.log('записан или изменён новый ответ', resultQuestion, question)
                         } else {
                             // пока что ничего
                         }
@@ -1349,7 +1429,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 }
             }
 
-            port?.postMessage({stats, error})
+            if (!message.new) port?.postMessage({stats, error})
         } else if (message.running != null || message.collectAnswers != null) {
             if (message.running || message.collectAnswers) {
                 if (message.collectAnswers) collectAnswers = message.collectAnswers
@@ -1357,6 +1437,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 // chrome.action.setBadgeText({text: 'ON'})
             }
         } else if (message.done) {
+            if (message.new) return
             lastScore = null
             let educationalElement = await db.getFromIndex('topics', 'name', message.topic)
             console.log('закончено', message.topic)
@@ -1372,6 +1453,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     educationalElement.error = message.error
                 } else {
                     educationalElement.completed = 1
+                    delete educationalElement.dirty
                 }
                 await db.put('topics', educationalElement)
                 if (educationalElement.inputIndex != null) {
