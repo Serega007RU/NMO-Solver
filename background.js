@@ -20,7 +20,7 @@ let lastScore
 
 class TopicError extends Error {}
 
-const dbVersion = 18
+const dbVersion = 19
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -62,7 +62,8 @@ async function init() {
                 timeoutReloadTabMin: 15000,
                 timeoutReloadTabMax: 90000,
                 offlineMode: false,
-                sendResults: true
+                sendResults: true,
+                positionStatus: 'bottom-left'
             }, 'settings')
             return
         }
@@ -114,6 +115,13 @@ async function init() {
             await transaction.objectStore('topics').clear()
             console.log('очистка questions')
             await transaction.objectStore('questions').clear()
+        }
+
+        if (oldVersion <= 18) {
+            console.log('Этап обновления с версии 18 на 19')
+            settings = await transaction.objectStore('other').get('settings')
+            settings.positionStatus = 'bottom-left'
+            await transaction.objectStore('other').put(settings, 'settings')
         }
 
         console.log('Обновление базы данных завершено')

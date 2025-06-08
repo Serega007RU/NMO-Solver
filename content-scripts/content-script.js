@@ -22,8 +22,13 @@ const statusDiv = document.createElement('div')
 
 
 function osReceiveStatus(message) {
+    if (message.settings) {
+        if (shadowRoot && message.settings.positionStatus !== settings?.positionStatus) {
+            setPosition(shadowRoot.querySelector('div > div'), message.settings.positionStatus)
+        }
+        settings = message.settings
+    }
     listenQuestions()
-    if (message.settings) settings = message.settings
     if (message.lastScore) lastScore = message.lastScore
     if (message.running) {
         stopRunning = false
@@ -876,8 +881,7 @@ function addShadowRoot() {
     div.style.width = '300px'
     div.style.height = '100px'
     div.style.position = 'fixed'
-    div.style.bottom = '10px'
-    div.style.left = '10px'
+    setPosition(div, settings?.positionStatus)
     div.style.borderRadius = '15px'
     div.style.color = 'black'
     div.style.background = '#ffffff'
@@ -907,6 +911,39 @@ function addShadowRoot() {
     mainBody.append(statusDiv)
     div.append(mainBody)
     mainDiv.append(div)
+}
+
+function setPosition(div, side) {
+    div.style.removeProperty('bottom')
+    div.style.removeProperty('left')
+    div.style.removeProperty('top')
+    div.style.removeProperty('right')
+    div.style.removeProperty('transform')
+
+    if (side === 'bottom-left') {
+        div.style.bottom = '10px'
+        div.style.left = '10px'
+    } else if (side === 'bottom-right') {
+        div.style.bottom = '10px'
+        div.style.right = '10px'
+    } else if (side === 'bottom-center') {
+        div.style.bottom = '10px'
+        div.style.left = '50%'
+        div.style.transform = 'translateX(-50%)'
+    } else if (side === 'top-left') {
+        div.style.top = '10px'
+        div.style.left = '10px'
+    } else if (side === 'top-right') {
+        div.style.top = '10px'
+        div.style.right = '10px'
+    } else if (side === 'top-center') {
+        div.style.top = '10px'
+        div.style.left = '50%'
+        div.style.transform = 'translateX(-50%)'
+    } else {
+        div.style.bottom = '10px'
+        div.style.left = '10px'
+    }
 }
 
 class GlobalSelectorMutationObserver {
