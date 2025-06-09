@@ -1400,7 +1400,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         stats.ignored++
                     }
                     if (foundAnswerHash) {
-                        if (!notAnswered && !settings.offlineMode && settings.sendResults) {
+                        if (!notAnswered /*&& !settings.offlineMode && settings.sendResults*/ && message.new) {
                             const toSendQuestion = {
                                 question: question.question,
                                 answers: {
@@ -1547,7 +1547,7 @@ function getCombinations(items, multi) {
 }
 
 async function sendResultsToServer(results, topic) {
-    if (settings.offlineMode || !settings.sendResults) return
+    // if (settings.offlineMode || !settings.sendResults) return
     try {
         const response = await fetch('https://serega007.ru/api/v3/saveResults', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
