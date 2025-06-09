@@ -1,5 +1,5 @@
-import { openDB } from '/libs/idb.js';
-import { default as objectHash } from '/libs/object-hash.js';
+import { openDB } from '/libs/idb.js'
+import { default as objectHash } from '/libs/object-hash.js'
 import '/utils.js'
 import '/normalize-text.js'
 import '/normalize-text_old.js'
@@ -709,12 +709,6 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     } else {
         searchQuery = educationalElement.name
         console.log('ищем', educationalElement)
-        if (educationalElement.dirty && educationalElement.name) {
-            const result = await getAnswersByTopicFromServer(educationalElement.name)
-            if (result?.topic) {
-                educationalElement = result.topic
-            }
-        }
     }
 
     const authData = await db.get('other', 'authData')
@@ -722,7 +716,9 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     // if (tempCabinet) cabinet = tempCabinet
 
     let foundEE
-    if (educationalElement.id) {
+    if (educationalElement.id && educationalElement.status) {
+        foundEE = {id: educationalElement.id, number: educationalElement.number, name: educationalElement.name, status: educationalElement.status}
+    } else if (educationalElement.id) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${educationalElement.id}/`, {
             headers: {authorization: 'Bearer ' + authData.access_token},
             method: 'GET',
@@ -846,17 +842,17 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     if (educationalElement.code !== foundEE.number) {
         educationalElement.code = foundEE.number
     }
-    // educationalElement.completed = completed
-    // educationalElement.status = status
+    // educationalElement.completed = foundEE.completed
+    educationalElement.status = foundEE.status
     await db.put('topics', educationalElement)
 
     if (foundEE.iomHost?.name) {
         if (!foundEE.iomHost.name.includes('Платформа онлайн-обучения Портала')) {
-            throw new TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+            throw new TopicError('Данный элемент не возможно пройти так как платформа обучения не поддерживается расширением (' + foundEE.iomHost.name + ')')
         }
     }
 
-    if (!foundEE.completed && foundEE.status !== 'included') {
+    if (!foundEE.completed && !foundEE.status) {
         let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id}/plan`, {
             headers: {authorization: 'Bearer ' + authData.access_token},
             method: 'PUT',
@@ -884,7 +880,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         }
     }
 
-    let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id }/open-link?backUrl=https%3A%2F%2F${cabinet}.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan`, {
+    let response = await fetch(`https://${cabinet}.edu.rosminzdrav.ru/api/api/educational-elements/iom/${foundEE.id}/open-link?backUrl=https%3A%2F%2F${cabinet}.edu.rosminzdrav.ru%2F%23%2Fuser-account%2Fmy-plan`, {
         headers: {authorization: 'Bearer ' + authData.access_token},
         method: 'GET',
         signal: anySignal([AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin), controller.signal])
@@ -896,10 +892,14 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     if (!json.url) {
         console.log(json)
         console.log(educationalElement)
+        if (educationalElement.status === 'included') {
+            delete educationalElement.status
+            await db.put('topics', educationalElement)
+        }
         throw Error('Не была получена ссылка по теме ' + educationalElement.name)
     }
     if (!new URL(json.url).host.includes('edu.rosminzdrav.ru')) {
-        throw new TopicError('Данный элемент не возможно пройти так как данная платформа обучения не поддерживается расширением')
+        throw new TopicError('Данный элемент не возможно пройти так как платформа обучения не поддерживается расширением (' + new URL(json.url).host + ')')
     }
     // tempCabinet = null
     return json.url

@@ -587,13 +587,14 @@ async function reimportDB(event) {
     target.disabled = true
     const status = document.querySelector('[for="importdb"] .status')
     let hasError = false
+    let transaction
     try {
         const result = await showOpenFilePicker({types: [{accept: {'application/json': '.json'}}]})
         setStatus('Считываем указанный файл...')
         const file = await result[0].getFile()
         const data = await new Response(file).json()
 
-        const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+        transaction = db.transaction(['questions', 'topics'], 'readwrite')
         const questionsStore = transaction.objectStore('questions')
         const topicsStore = transaction.objectStore('topics')
 
@@ -649,6 +650,7 @@ async function reimportDB(event) {
         console.error(error)
         hasError = true
         status.textContent = error.message
+        transaction?.abort()
     } finally {
         target.disabled = false
     }
