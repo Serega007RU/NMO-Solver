@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
                     if (ee.status !== 'included') continue
                     const name = ee.elementName || ee.elementTitle || ee.elementId
                     if (elTopics.innerText.includes(name)) continue
-                    const object = {id: ee.elementId, name: normalizeText(ee.elementName || ee.elementTitle), dirty: 1}
+                    const object = {id: ee.elementId, name: normalizeText(ee.elementName || ee.elementTitle, true), dirty: 1}
                     await putNewTopic(object, topicsStore)
                     const li = document.createElement('li')
                     li.textContent = name
@@ -505,11 +505,11 @@ async function updateTopics(elTopics, skipTimer) {
             if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(ee[0])) {
                 object.id = ee[0]
             } else {
-                object.name = normalizeText(ee[0])
+                object.name = normalizeText(ee[0], true)
             }
         } else if (ee[0]?.trim() && ee[1]?.trim()) {
             object.code = ee[0].trim()
-            object.name = normalizeText(ee[1])
+            object.name = normalizeText(ee[1], true)
         }
 
         let topic
@@ -587,13 +587,14 @@ async function reimportDB(event) {
     target.disabled = true
     const status = document.querySelector('[for="importdb"] .status')
     let hasError = false
+    let transaction
     try {
         const result = await showOpenFilePicker({types: [{accept: {'application/json': '.json'}}]})
         setStatus('Считываем указанный файл...')
         const file = await result[0].getFile()
         const data = await new Response(file).json()
 
-        const transaction = db.transaction(['questions', 'topics'], 'readwrite')
+        transaction = db.transaction(['questions', 'topics'], 'readwrite')
         const questionsStore = transaction.objectStore('questions')
         const topicsStore = transaction.objectStore('topics')
 
@@ -649,6 +650,7 @@ async function reimportDB(event) {
         console.error(error)
         hasError = true
         status.textContent = error.message
+        transaction?.abort()
     } finally {
         target.disabled = false
     }
