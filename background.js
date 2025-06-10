@@ -942,20 +942,23 @@ chrome.runtime.onConnect.addListener((port) => {
             let error
             lastScore = null
             let searchedOnServer
-            let topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
-            if (!topic || topic.dirty) {
-                searchedOnServer = true
-                const result = await getAnswersByTopicFromServer(message.question.topics[0])
-                error = result?.error
-                if (result?.topic) {
-                    topic = result.topic
-                } else if (!topic) {
-                    topic = {name: message.question.topics[0]}
-                    topic._id = await db.put('topics', topic)
-                    console.log('Внесена новая тема в базу', message.question.topics[0])
-                } else if (topic.dirty && result && !result.error) {
-                    delete topic.dirty
-                    await db.put('topics', topic)
+            let topic
+            if (message.question.topics[0]) {
+                topic = await db.getFromIndex('topics', 'name', message.question.topics[0])
+                if (!topic || topic.dirty) {
+                    searchedOnServer = true
+                    const result = await getAnswersByTopicFromServer(message.question.topics[0])
+                    error = result?.error
+                    if (result?.topic) {
+                        topic = result.topic
+                    } else if (!topic) {
+                        topic = {name: message.question.topics[0]}
+                        topic._id = await db.put('topics', topic)
+                        console.log('Внесена новая тема в базу', message.question.topics[0])
+                    } else if (topic.dirty && result && !result.error) {
+                        delete topic.dirty
+                        await db.put('topics', topic)
+                    }
                 }
             }
             let question = await db.getFromIndex('questions', 'question', message.question.question)
@@ -981,7 +984,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (!question.answers[answerHash]) {
                     question.answers[answerHash] = message.question.answers
                     // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
-                    if (question.topics.length > 1 || question.topics[0] !== topic._id) {
+                    if (topic && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id))) {
                         for (const aH of Object.keys(question.answers)) {
                             if (!question.answers[aH].topics) {
                                 question.answers[aH].topics = [...question.topics]
@@ -1046,7 +1049,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         }
                     }
                     // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
-                    if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[answerHash].topics?.includes(topic._id)) {
+                    if (topic && Object.keys(question.answers).length > 1 && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id)) && !question.answers[answerHash].topics?.includes(topic._id)) {
                         for (const aH of Object.keys(question.answers)) {
                             if (!question.answers[aH].topics) {
                                 question.answers[aH].topics = [...question.topics]
@@ -1105,7 +1108,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         port?.postMessage({answers, question, answerHash, error})
                     }
                 }
-                if (!question.topics.includes(topic._id)) {
+                if (topic && !question.topics.includes(topic._id)) {
                     question.topics.push(topic._id)
                 }
                 await db.put('questions', question)
@@ -1120,7 +1123,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 question.answers = {[answerHash]: question.answers}
                 question.lastOrder = {[question.lastOrder]: answerHash}
                 question.correctAnswers = {}
-                question.topics = [topic._id]
+                question.topics = topic ? [topic._id] : []
                 console.log('добавлен новый вопрос', question)
                 question.answers[answerHash].lastUsedAnswers = answers
                 port?.postMessage({answers, question, answerHash, error})
@@ -1130,18 +1133,21 @@ chrome.runtime.onConnect.addListener((port) => {
         } else if (message.results) {
             let stats = {correct: 0, taken: 0, ignored: 0}
 
-            let topic = await db.getFromIndex('topics', 'name', message.topic)
-            if (!topic || topic.dirty) {
-                const result = await getAnswersByTopicFromServer(message.topic)
-                if (result?.topic) {
-                    topic = result.topic
-                } else if (!topic) {
-                    topic = {name: message.topic}
-                    topic._id = await db.put('topics', topic)
-                    console.log('Внесена новая тема в базу', message.topic)
-                } else if (topic.dirty && result && !result.error) {
-                    delete topic.dirty
-                    await db.put('topics', topic)
+            let topic
+            if (message.topic) {
+                topic = await db.getFromIndex('topics', 'name', message.topic)
+                if (!topic || topic.dirty) {
+                    const result = await getAnswersByTopicFromServer(message.topic)
+                    if (result?.topic) {
+                        topic = result.topic
+                    } else if (!topic) {
+                        topic = {name: message.topic}
+                        topic._id = await db.put('topics', topic)
+                        console.log('Внесена новая тема в базу', message.topic)
+                    } else if (topic.dirty && result && !result.error) {
+                        delete topic.dirty
+                        await db.put('topics', topic)
+                    }
                 }
             }
             lastScore = message.lastScore
@@ -1156,7 +1162,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         question = {
                             question: resultQuestion.question,
                             answers: {},
-                            topics: [topic._id],
+                            topics: topic ? [topic._id] : [],
                             correctAnswers: {'unknown': resultQuestion.answers.usedAnswers}
                         }
                         question._id = await db.put('questions', question)
@@ -1240,7 +1246,7 @@ chrome.runtime.onConnect.addListener((port) => {
                                 delete question.answers[matchAnswers[0]].combinations
                             }
                             // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
-                            if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0]].topics?.includes(topic._id)) {
+                            if (topic && Object.keys(question.answers).length > 1 && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id)) && !question.answers[matchAnswers[0]].topics?.includes(topic._id)) {
                                 for (const aH of Object.keys(question.answers)) {
                                     if (!question.answers[aH].topics) {
                                         question.answers[aH].topics = [...question.topics]
@@ -1343,7 +1349,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             stats.ignored++
                         } else if (!fakeCorrectAnswers) {
                             // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
-                            if (Object.keys(question.answers).length > 1 && (question.topics > 1 || question.topics[0] !== topic._id) && !question.answers[matchAnswers[0].answerHash].topics?.includes(topic._id)) {
+                            if (topic && Object.keys(question.answers).length > 1 && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id)) && !question.answers[matchAnswers[0].answerHash].topics?.includes(topic._id)) {
                                 for (const aH of Object.keys(question.answers)) {
                                     if (!question.answers[aH].topics) {
                                         question.answers[aH].topics = [...question.topics]
@@ -1380,7 +1386,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         delete question.lastOrder?.[resultQuestion.lastOrder]
                         if (!notAnswered) delete question.answers[foundAnswerHash].lastUsedAnswers
 
-                        if (!question.topics.includes(topic._id)) {
+                        if (topic && !question.topics.includes(topic._id)) {
                             changedCombinations = true
                             question.topics.push(topic._id)
                         }
@@ -1399,7 +1405,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
             let error
             if (toSendResults.length) {
-                const result = await sendResultsToServer(toSendResults, topic.name)
+                const result = await sendResultsToServer(toSendResults, topic?.name)
                 if (result?.stats) {
                     stats = result.stats
                     stats.isServer = true

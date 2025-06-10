@@ -135,7 +135,7 @@ const latinToCyrillicMap = {
 }
 const cyrillicToLatinMap = Object.fromEntries(Object.entries(latinToCyrillicMap).map(([k, v]) => [v, k]))
 
-function normalizeText(str, topic) {
+function normalizeText(str, topic, test) {
     let text = str
         .replace(/[^йЙёЁ№º⁰¹²³⁴⁵⁶⁷⁸⁹″]+/g, segment => segment.normalize('NFKD')) // разбиваем на базовые буквы + диакритики, но при этом не трогаем символы разрешённые для использования с диакритиками
         .replace(/[\u0300-\u036F]/g, '')  // удалить все диакритики
@@ -146,8 +146,8 @@ function normalizeText(str, topic) {
         .replace(/\p{Cf}/gu, '') // невидимые символы
         .replace(/\s+/g, ' ') // Сжатие пробелов (двойные пробелы)
         .trim() // Убрать пробелы по краям
-    text = text.replaceAll('<sup>', '')
-    text = text.replaceAll('</sup>', '')
+    text = text.replaceAll('<sup>', '').trim()
+    text = text.replaceAll('</sup>', '').trim()
     if (topic) text = removeTestLabels(text).trim()
 
     const forbiddenChars = text.match(regexSymbols)
@@ -176,6 +176,10 @@ function normalizeText(str, topic) {
     })
     if (!failedSuspiciousWords && (regexWords.test(text) || (text.match(regexWords)?.length))) {
         /*throw Error*/console.warn('Обнаружены подозрительные слова в тексте!')
+    }
+
+    if (text.toLowerCase().startsWith('вариант №')) {
+        return null
     }
 
     return text
