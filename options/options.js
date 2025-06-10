@@ -405,6 +405,7 @@ function setCursorIndex(element, index) {
 }
 
 async function onChangedSettings() {
+    setToast('Сохранение настроек...')
     await db.put('other', settings, 'settings')
     chrome.runtime.sendMessage({reloadSettings: true})
     const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
@@ -413,6 +414,7 @@ async function onChangedSettings() {
             await chrome.tabs.sendMessage(tab.id, {status: true, settings})
         } catch (ignored) {}
     }
+    setToast('Настройки сохранены', true)
 }
 
 async function restoreTopics() {
@@ -450,6 +452,8 @@ function updateTopic(topic, element) {
 let topicsTimer
 let topicsFunc
 async function updateTopics(elTopics, skipTimer) {
+    setToast('Сохранение настроек...')
+
     // подобным образом мы хоть как-то оптимизируем обновление списка
     if (!skipTimer) {
         clearTimeout(topicsTimer)
@@ -462,8 +466,6 @@ async function updateTopics(elTopics, skipTimer) {
     if (topicsFunc && !topicsFunc.done) {
         updateTopics(elTopics)
     }
-
-    console.log('Обновление topics')
 
     const topicsStore = db.transaction('topics', 'readwrite').store
 
@@ -550,7 +552,22 @@ async function updateTopics(elTopics, skipTimer) {
         li.id = key
     }
 
-    console.log('Обновление topics окончено')
+    setToast('Настройки сохранены', true)
+}
+
+let saveTimer
+function setToast(text, hide) {
+    clearInterval(saveTimer)
+    message.textContent = text
+    if (!hide) {
+        toast.classList.add('show')
+        spinner.style.display = 'block'
+        checkmark.style.display = 'none'
+    } else {
+        spinner.style.display = 'none'
+        checkmark.style.display = 'block'
+        saveTimer = setTimeout(() => toast.classList.remove('show'), 2000)
+    }
 }
 
 function wait(ms) {
