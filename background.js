@@ -155,7 +155,7 @@ async function resetOptionalVariables() {
             changed = true
             delete question.lastOrder
         }
-        for (const answersHash of Object.keys(question.answers)) {
+        for (const answersHash in question.answers) {
             // if (question.answers[answersHash].fakeCorrectAnswers) {
             //     changed = true
             //     delete question.answers[answersHash].fakeCorrectAnswers
@@ -232,7 +232,7 @@ async function fixDupQuestions() {
                     changed = true
                 }
 
-                for (const answerHash of Object.keys(question.answers)) {
+                for (const answerHash in question.answers) {
                     const newAnswers = []
                     for (const answer of question.answers[answerHash].answers) {
                         newAnswers.push(normalizeText(answer))
@@ -293,7 +293,7 @@ async function fixDupQuestions() {
                     cursor2 = await cursor2.continue()
                     let changed = false
                     while (cursor2) {
-                        for (const answersHash of Object.keys(cursor2.value.answers)) {
+                        for (const answersHash in cursor2.value.answers) {
                             if (!question.answers[answersHash] || (!question.answers[answersHash].type && cursor2.value.answers[answersHash].type)) {
                                 changed = true
                                 question.answers[answersHash] = cursor2.value.answers[answersHash]
@@ -433,7 +433,7 @@ async function getCorrectAnswers(topic, index) {
     let cursor = await db.transaction('questions').store.index('topics').openCursor(result.value._id)
     while(cursor) {
         const question = cursor.value
-        for (const answerHash of Object.keys(question.answers)) {
+        for (const answerHash in question.answers) {
             if (question.correctAnswers[answerHash]) {
                 text += question.question + ':\n'
                 for (const answer of question.correctAnswers[answerHash]) {
@@ -985,7 +985,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     question.answers[answerHash] = message.question.answers
                     // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                     if (topic && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id))) {
-                        for (const aH of Object.keys(question.answers)) {
+                        for (const aH in question.answers) {
                             if (!question.answers[aH].topics) {
                                 question.answers[aH].topics = [...question.topics]
                             }
@@ -1050,7 +1050,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                     // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                     if (topic && Object.keys(question.answers).length > 1 && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id)) && !question.answers[answerHash].topics?.includes(topic._id)) {
-                        for (const aH of Object.keys(question.answers)) {
+                        for (const aH in question.answers) {
                             if (!question.answers[aH].topics) {
                                 question.answers[aH].topics = [...question.topics]
                             }
@@ -1247,7 +1247,7 @@ chrome.runtime.onConnect.addListener((port) => {
                             }
                             // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                             if (topic && Object.keys(question.answers).length > 1 && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id)) && !question.answers[matchAnswers[0]].topics?.includes(topic._id)) {
-                                for (const aH of Object.keys(question.answers)) {
+                                for (const aH in question.answers) {
                                     if (!question.answers[aH].topics) {
                                         question.answers[aH].topics = [...question.topics]
                                     }
@@ -1350,7 +1350,7 @@ chrome.runtime.onConnect.addListener((port) => {
                         } else if (!fakeCorrectAnswers) {
                             // если данный вариант ответов относится к другой теме, то явно прописываем id topic'а к данном варианту ответов
                             if (topic && Object.keys(question.answers).length > 1 && (question.topics.length > 1 || (question.topics.length && question.topics[0] !== topic._id)) && !question.answers[matchAnswers[0].answerHash].topics?.includes(topic._id)) {
-                                for (const aH of Object.keys(question.answers)) {
+                                for (const aH in question.answers) {
                                     if (!question.answers[aH].topics) {
                                         question.answers[aH].topics = [...question.topics]
                                     }
@@ -1584,7 +1584,7 @@ async function joinQuestion(newQuestion) {
     }
 
     let changed, changedAnswers
-    for (const answersHash of Object.keys(newQuestion.answers)) {
+    for (const answersHash in newQuestion.answers) {
         if (!question.answers[answersHash]) {
             changed = true
             question.answers[answersHash] = newQuestion.answers[answersHash]
