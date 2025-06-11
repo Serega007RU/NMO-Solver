@@ -78,6 +78,10 @@ async function portListener(message) {
         }
     } else if (message.stats) {
         if (message.error) {
+            if (message.error.toLocaleLowerCase().startsWith('<!doctype html>')) {
+                const dom = new DOMParser().parseFromString(message.error, 'text/html')
+                message.error = dom.documentElement.innerText.replace(/\s+/g, ' ').trim()
+            }
             errorDiv.innerText = message.error
         }
         statusDiv.innerText = 'Статистка учтённых ответов' + (message.error || settings.offlineMode || !settings.sendResults || !message.stats?.isServer ? ' (локально)' : '') + `:\n${message.stats.correct} правильных\n${message.stats.taken} учтено\n${message.stats.ignored} без изменений`
@@ -839,6 +843,10 @@ function highlightAnswers(remove) {
         statusDiv.innerText = 'В ' + (cachedMessage.error || settings.offlineMode ? 'локальной ' : '') + 'базе нет ответов на данный вопрос\nОтветы подсвечены методом подбора\nосталось вариантов ответов ' + cachedMessage.question?.answers[cachedMessage.answerHash].combinations.length
     }
     if (cachedMessage.error) {
+        if (cachedMessage.error.toLocaleLowerCase().startsWith('<!doctype html>')) {
+            const dom = new DOMParser().parseFromString(cachedMessage.error, 'text/html')
+            cachedMessage.error = dom.documentElement.innerText.replace(/\s+/g, ' ').trim()
+        }
         errorDiv.innerText = cachedMessage.error
     } else {
         errorDiv.replaceChildren()

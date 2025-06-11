@@ -948,7 +948,7 @@ chrome.runtime.onConnect.addListener((port) => {
                 if (!topic || topic.dirty) {
                     searchedOnServer = true
                     const result = await getAnswersByTopicFromServer(message.question.topics[0])
-                    error = result?.error
+                    if (result?.error) error = result.error
                     if (result?.topic) {
                         topic = result.topic
                     } else if (!topic) {
@@ -965,20 +965,20 @@ chrome.runtime.onConnect.addListener((port) => {
             if (!question) {
                 searchedOnServer = true
                 const result = await getAnswersByQuestionFromServer(message.question.question)
+                if (result?.error) error = result.error
                 if (result?.question) {
                     question = result.question
                 }
-                error = result?.error
             }
             // работа с найденным вопросом
             if (question) {
                 const answerHash = objectHash(message.question.answers.answers)
                 if (!searchedOnServer && !question.answers[answerHash]) {
                     const result = await getAnswersByQuestionFromServer(message.question.question)
+                    if (result?.error) error = result.error
                     if (result?.question) {
                         question = result.question
                     }
-                    error = result?.error
                 }
                 // добавление другого варианта ответов (в одном вопросе может быть несколько вариаций ответов с разными ответами)
                 if (!question.answers[answerHash]) {
@@ -1030,10 +1030,10 @@ chrome.runtime.onConnect.addListener((port) => {
                 } else {
                     if (!searchedOnServer && !question.correctAnswers[answerHash]?.length) {
                         const result = await getAnswersByQuestionFromServer(message.question.question)
+                        if (result?.error) error = result.error
                         if (result?.question) {
                             question = result.question
                         }
-                        error = result?.error
                     }
                     if (!question.lastOrder) question.lastOrder = {}
                     question.lastOrder[message.question.lastOrder] = answerHash
@@ -1133,11 +1133,13 @@ chrome.runtime.onConnect.addListener((port) => {
         } else if (message.results) {
             let stats = {correct: 0, taken: 0, ignored: 0}
 
+            let error
             let topic
             if (message.topic) {
                 topic = await db.getFromIndex('topics', 'name', message.topic)
                 if (!topic || topic.dirty) {
                     const result = await getAnswersByTopicFromServer(message.topic)
+                    if (result?.error) error = result.error
                     if (result?.topic) {
                         topic = result.topic
                     } else if (!topic) {
@@ -1403,14 +1405,12 @@ chrome.runtime.onConnect.addListener((port) => {
                 }
             }
 
-            let error
             if (toSendResults.length) {
                 const result = await sendResultsToServer(toSendResults, topic?.name)
+                if (result?.error) error = result.error
                 if (result?.stats) {
                     stats = result.stats
                     stats.isServer = true
-                } else if (result?.error) {
-                    error = result.error
                 }
             }
 
@@ -1523,6 +1523,10 @@ async function sendResultsToServer(results, topic) {
             body: JSON.stringify({results, topic}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
+        if (response.headers.get('content-type').includes('text/html')) {
+            const text = await response.text()
+            return {error: text}
+        }
         // noinspection UnnecessaryLocalVariableJS
         const json = await response.json()
         return json
@@ -1541,6 +1545,10 @@ async function getAnswersByQuestionFromServer(question) {
             body: JSON.stringify({name: question}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
+        if (response.headers.get('content-type').includes('text/html')) {
+            const text = await response.text()
+            return {error: text}
+        }
         const json = await response.json()
         if (json?.question) {
             json.question = await joinQuestion(json.question)
@@ -1561,6 +1569,10 @@ async function getAnswersByTopicFromServer(topicName) {
             body: JSON.stringify({name: topicName}),
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
+        if (response.headers.get('content-type').includes('text/html')) {
+            const text = await response.text()
+            return {error: text}
+        }
         const json = await response.json()
         if (json?.topic && json?.questions) {
             json.topic = await putNewTopic(json.topic, null, true)
