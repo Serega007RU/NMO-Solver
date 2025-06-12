@@ -134,6 +134,7 @@ async function init() {
     await toggleContentScript()
     await toggleVisibleScript()
     await toggleRuleSet()
+    await toggleDynamicsRuleSet()
 
     console.log('started background!')
 }
@@ -461,6 +462,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (!message.cabinet) message.cabinet = 'vo'
             message.cabinet = 'nmfo-' + message.cabinet
             await db.put('other', message.cabinet, 'cabinet')
+            await toggleDynamicsRuleSet(message.cabinet)
         })()
     }
     if (message.status) {

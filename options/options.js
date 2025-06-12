@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', async ()=> {
             toggleContentScript()
             toggleVisibleScript()
             toggleRuleSet()
+            toggleDynamicsRuleSet()
         })
     })
 

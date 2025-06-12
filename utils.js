@@ -67,6 +67,40 @@ async function toggleRuleSet() {
 }
 self.toggleRuleSet = toggleRuleSet
 
+async function toggleDynamicsRuleSet(cabinet) {
+    const rules = await chrome.declarativeNetRequest.getDynamicRules()
+    if (settings.mode === 'manual' || settings.mode === 'disabled') {
+        if (rules.length) {
+            await chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds: rules.map(rule => rule.id)})
+        }
+    } else {
+        if (!cabinet) cabinet = await db.get('other', 'cabinet')
+        if (cabinet) {
+            if (rules.find(rule => rule.condition.urlFilter === `https://${cabinet}.edu.rosminzdrav.ru/*`)) return
+            await chrome.declarativeNetRequest.updateDynamicRules({
+                removeRuleIds: rules.map(rule => rule.id),
+                addRules: [{
+                    id: Math.floor(Math.random() * 1000000),
+                    priority: 1,
+                    action: {
+                        type: "modifyHeaders",
+                        requestHeaders: [{
+                            header: "Origin",
+                            operation: "set",
+                            value: `https://${cabinet}.edu.rosminzdrav.ru`
+                        }]
+                    },
+                    condition: {
+                        urlFilter: `https://${cabinet}.edu.rosminzdrav.ru/*`,
+                        requestMethods: ["post", "put", "delete", "patch", "options"]
+                    }
+                }]
+            })
+        }
+    }
+}
+self.toggleDynamicsRuleSet = toggleDynamicsRuleSet
+
 async function putNewTopic(newTopic, topicsStore, removeDirty) {
     if (!topicsStore) topicsStore = db.transaction('topics', 'readwrite').store
     let topic, changed
