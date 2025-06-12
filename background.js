@@ -25,6 +25,7 @@ const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
 async function init() {
+    // noinspection JSUnusedGlobalSymbols
     db = await openDB('nmo', dbVersion, {upgrade})
     self.db = db
     async function upgrade(db, oldVersion, newVersion, transaction) {
@@ -193,6 +194,10 @@ async function resetOptionalVariables() {
         if (topic.completed != null) {
             changed = true
             delete topic.completed
+        }
+        if (topic.status != null) {
+            changed = true
+            delete topic.status
         }
         if (topic.needSearchAnswers != null) {
             changed = true
@@ -488,7 +493,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 } else {
                     if (!await checkThrottleTab(sender.tab.id)) {
                         showNotification('Ошибка', 'Похоже браузер ограничил или приостановил работу вкладки из-за ограничений фонового режима')
-                        chrome.action.setBadgeText({text: 'ERR'})
                         stop(sender.tab.id)
                         return
                     }
@@ -530,7 +534,7 @@ chrome.action.onClicked.addListener(async (tab) => {
             if (error.message.includes('Receiving end does not exist') || error.message.includes('message port closed before a response was received')) {
                 showNotification('Ошибка', 'Похоже на данной вкладке открыт НЕ портал НМО (или что-то не относящееся к тестам ОИМ), если это не так - попробуйте обновить страницу')
             } else {
-                showNotification('S Непредвиденная ошибка', error.message)
+                showNotification('Непредвиденная ошибка', error.message)
             }
             return
         }
@@ -552,7 +556,6 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
     }
     if (started > (settings.maxReloadTest + 1)) {
         showNotification('Ошибка', 'Слишком много попыток запустить тест')
-        chrome.action.setBadgeText({text: 'ERR'})
         stop(tab.id)
         return
     }
@@ -562,7 +565,6 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
     if (!chrome.tabs.onRemoved.hasListeners()) chrome.tabs.onRemoved.addListener(onRemovedTabsListener)
     if (hasError && !await checkThrottleTab(tab.id)) {
         showNotification('Ошибка', 'Похоже браузер ограничил или приостановил работу вкладки из-за ограничений фонового режима')
-        chrome.action.setBadgeText({text: 'ERR'})
         stop(tab.id)
         return
     }
@@ -571,7 +573,6 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
         waitUntilState(false)
         started = 0
         if (stopRunning) return
-        chrome.action.setBadgeText({text: 'ERR'})
         stop(tab.id)
         return
     }
@@ -585,7 +586,6 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
         } else if (!hasTest) {
             chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
             showNotification('Ошибка', 'На данной странице нет теста или не назначены тесты в настройках')
-            chrome.action.setBadgeText({text: 'ERR'})
             stop(tab.id)
             return
         } else if (hasError) {
@@ -613,7 +613,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
         }
         await chrome.tabs.update(tab.id, {url, autoDiscardable: false})
     }
-    chrome.action.setTitle({title: 'Расширение решает тест'})
+    chrome.action.setTitle({title: 'Расширение решает тест' + (started > 1 ? ' (попытка № ' + started + ')' : '')})
     chrome.action.setBadgeText({text: 'ON'})
     setReloadTabTimer()
 }
@@ -623,7 +623,7 @@ async function checkOrGetTopic() {
     const countEE = await db.countFromIndex('topics', 'completed, inputIndex', IDBKeyRange.bound([0, 0], [0, Infinity]))
     if (countEE) {
         chrome.action.setTitle({title: 'Ищем тему (тест) на портале и пытаемся открыть'})
-        chrome.action.setBadgeText({text: 'SEARCH'})
+        chrome.action.setBadgeText({text: 'SRCH'})
         if (!(await db.get('other', 'authData'))?.access_token) {
             showNotification('Ошибка', 'Нет данных об авторизации')
             return 'error'
@@ -632,6 +632,9 @@ async function checkOrGetTopic() {
         let count = 0
         while (true) {
             count++
+            if (count > 1) {
+                chrome.action.setTitle({title: `Ищем тему (тест) на портале и пытаемся открыть (попытка № ${count})`})
+            }
             if (count >= 100) {
                 showNotification('Ошибка', 'Слишком много попыток поиска темы')
                 return 'error'
@@ -670,7 +673,7 @@ async function checkOrGetTopic() {
                     error.message !== 'Failed to fetch' &&
                     error.message !== 'notFound'
                 ) {
-                    showNotification('W Непредвиденная ошибка', error.message)
+                    showNotification('Непредвиденная ошибка', error.message)
                     return 'error'
                 }
                 await wait(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
@@ -1652,6 +1655,9 @@ async function joinQuestion(newQuestion) {
 function showNotification(title, message) {
     console.log(title, message)
     chrome.action.setTitle({title: message})
+    if (title === 'Ошибка' || title === 'Непредвиденная ошибка') {
+        chrome.action.setBadgeText({text: 'ERR'})
+    }
     chrome.notifications.create({type: 'basic', message, title, iconUrl: 'img/icon128.png'})
 }
 
