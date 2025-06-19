@@ -687,16 +687,18 @@ async function checkOrGetTopic() {
 async function searchEducationalElement(educationalElement, cut, inputName) {
     if (settings.clickWaitMax) await wait(Math.random() * (settings.clickWaitMax - settings.clickWaitMin) + settings.clickWaitMin)
 
-    let searchQuery
+    let searchQuery = educationalElement.name
+    console.log('ищем', educationalElement)
     if (inputName) {
         searchQuery = educationalElement.inputName
         console.log('ищем (по пользовательскому названию)', searchQuery)
     } else if (cut) {
-        searchQuery = educationalElement.name.slice(0, -10)
+        searchQuery = searchQuery.slice(0, -10)
         console.log('ищем (урезанное название)', searchQuery)
-    } else {
-        searchQuery = educationalElement.name
-        console.log('ищем', educationalElement)
+    }
+    if (searchQuery.length > 255) {
+        searchQuery = searchQuery.slice(0, 255)
+        console.warn('название темы слишком длинное, урезано до 255 символов', searchQuery)
     }
 
     const authData = await db.get('other', 'authData')
