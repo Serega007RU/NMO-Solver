@@ -135,7 +135,7 @@ const latinToCyrillicMap = {
 }
 const cyrillicToLatinMap = Object.fromEntries(Object.entries(latinToCyrillicMap).map(([k, v]) => [v, k]))
 
-function normalizeText(str, topic, test) {
+function normalizeText(str, topic) {
     let text = str
         .replace(/[^йЙёЁ№º⁰¹²³⁴⁵⁶⁷⁸⁹″]+/g, segment => segment.normalize('NFKD')) // разбиваем на базовые буквы + диакритики, но при этом не трогаем символы разрешённые для использования с диакритиками
         .replace(/[\u0300-\u036F]/g, '')  // удалить все диакритики
@@ -178,7 +178,7 @@ function normalizeText(str, topic, test) {
         /*throw Error*/console.warn('Обнаружены подозрительные слова в тексте!')
     }
 
-    if (text.toLowerCase().startsWith('вариант №')) {
+    if (topic && text.toLowerCase().startsWith('вариант №')) {
         return null
     }
 
