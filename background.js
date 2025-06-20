@@ -729,8 +729,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
             delete educationalElement.id
             delete educationalElement.code
             await db.put('topics', educationalElement)
-            await searchEducationalElement(educationalElement, cut, inputName)
-            return
+            return await searchEducationalElement(educationalElement, cut, inputName)
         }
         await checkErrors(json)
         foundEE = json
@@ -760,12 +759,10 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         if (!json.elements.length) {
             if (!cut && educationalElement.code) {
                 cut = true
-                await searchEducationalElement(educationalElement, cut, inputName)
-                return
+                return await searchEducationalElement(educationalElement, cut, inputName)
             } else if (!inputName && educationalElement.inputName && educationalElement.name !== educationalElement.inputName) {
                 inputName = true
-                await searchEducationalElement(educationalElement, cut, inputName)
-                return
+                return await searchEducationalElement(educationalElement, cut, inputName)
             } else {
                 console.log(json)
                 throw new TopicError('По заданному названию ничего не найдено')
@@ -890,8 +887,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         delete educationalElement.id
         delete educationalElement.code
         await db.put('topics', educationalElement)
-        await searchEducationalElement(educationalElement, cut, inputName)
-        return
+        return await searchEducationalElement(educationalElement, cut, inputName)
     }
     await checkErrors(json)
     console.log('открываем', educationalElement.name)
