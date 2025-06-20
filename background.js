@@ -701,6 +701,13 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         console.warn('название темы слишком длинное, урезано до 255 символов', searchQuery)
     }
 
+    if (educationalElement.dirty && educationalElement.name) {
+        const result = await getAnswersByTopicFromServer(educationalElement.name)
+        if (result?.topic) {
+            educationalElement = result.topic
+        }
+    }
+
     const authData = await db.get('other', 'authData')
     let cabinet = await db.get('other', 'cabinet')
     // if (tempCabinet) cabinet = tempCabinet
