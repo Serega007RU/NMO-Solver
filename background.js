@@ -762,7 +762,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
                 cut = true
                 await searchEducationalElement(educationalElement, cut, inputName)
                 return
-            } else if (!inputName && educationalElement.inputName) {
+            } else if (!inputName && educationalElement.inputName && educationalElement.name !== educationalElement.inputName) {
                 inputName = true
                 await searchEducationalElement(educationalElement, cut, inputName)
                 return
