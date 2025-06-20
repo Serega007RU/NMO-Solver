@@ -723,7 +723,7 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
         })
         if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
         let json = await response.json()
-        if (json.globalErrors?.[0]?.code === 'notFound') {
+        if ((educationalElement.id || educationalElement.code) && json.globalErrors?.[0]?.code === 'notFound') {
             // TODO у нас проблема с id, в разных кабинетах разные id тем с одинаковым названием
             console.warn('Не удалось найти элемент по id, возможно тут конфликт с id')
             delete educationalElement.id
@@ -884,6 +884,15 @@ async function searchEducationalElement(educationalElement, cut, inputName) {
     })
     if (!response.ok && String(response.status).startsWith('5')) throw Error('bad code ' + response.status)
     let json = await response.json()
+    if ((educationalElement.id || educationalElement.code) && json.globalErrors?.[0]?.code === 'notFound') {
+        // TODO у нас проблема с id, в разных кабинетах разные id тем с одинаковым названием
+        console.warn('Не удалось найти элемент по id, возможно тут конфликт с id')
+        delete educationalElement.id
+        delete educationalElement.code
+        await db.put('topics', educationalElement)
+        await searchEducationalElement(educationalElement, cut, inputName)
+        return
+    }
     await checkErrors(json)
     console.log('открываем', educationalElement.name)
     if (!json.url) {
