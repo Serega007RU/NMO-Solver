@@ -406,7 +406,7 @@ function setCursorIndex(element, index) {
 }
 
 async function onChangedSettings() {
-    setToast('Сохранение настроек...')
+    setToast('Сохранение настроек...', true)
     await db.put('other', settings, 'settings')
     chrome.runtime.sendMessage({reloadSettings: true})
     const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
@@ -415,7 +415,7 @@ async function onChangedSettings() {
             await chrome.tabs.sendMessage(tab.id, {status: true, settings})
         } catch (ignored) {}
     }
-    setToast('Настройки сохранены', true)
+    setToast('Настройки сохранены')
 }
 
 async function restoreTopics() {
@@ -453,7 +453,7 @@ function updateTopic(topic, element) {
 let topicsTimer
 let topicsFunc
 async function updateTopics(elTopics, skipTimer) {
-    setToast('Сохранение настроек...')
+    setToast('Сохранение настроек...', true)
 
     // подобным образом мы хоть как-то оптимизируем обновление списка
     if (!skipTimer) {
@@ -553,21 +553,26 @@ async function updateTopics(elTopics, skipTimer) {
         li.id = key
     }
 
-    setToast('Настройки сохранены', true)
+    setToast('Настройки сохранены')
 }
 
 let saveTimer
-function setToast(text, hide) {
+function setToast(text, loading, color='#4CAF50') {
     clearInterval(saveTimer)
     message.textContent = text
-    if (!hide) {
-        toast.classList.add('show')
+    toast.style.backgroundColor = color
+    toast.classList.add('show')
+    if (!loading) {
+        if (spinner.style.display === 'block') {
+            spinner.style.display = 'none'
+            checkmark.style.display = 'block'
+        } else {
+            checkmark.style.display = 'none'
+        }
+        saveTimer = setTimeout(() => toast.classList.remove('show'), 2000)
+    } else {
         spinner.style.display = 'block'
         checkmark.style.display = 'none'
-    } else {
-        spinner.style.display = 'none'
-        checkmark.style.display = 'block'
-        saveTimer = setTimeout(() => toast.classList.remove('show'), 2000)
     }
 }
 
