@@ -406,7 +406,7 @@ function setCursorIndex(element, index) {
 }
 
 async function onChangedSettings() {
-    setToast('Сохранение настроек...')
+    setToast('Сохранение настроек...', true)
     await db.put('other', settings, 'settings')
     chrome.runtime.sendMessage({reloadSettings: true})
     const tabs = await chrome.tabs.query({url: 'https://*.edu.rosminzdrav.ru/*'})
@@ -415,7 +415,7 @@ async function onChangedSettings() {
             await chrome.tabs.sendMessage(tab.id, {status: true, settings})
         } catch (ignored) {}
     }
-    setToast('Настройки сохранены', true)
+    setToast('Настройки сохранены')
 }
 
 async function restoreTopics() {
@@ -453,7 +453,7 @@ function updateTopic(topic, element) {
 let topicsTimer
 let topicsFunc
 async function updateTopics(elTopics, skipTimer) {
-    setToast('Сохранение настроек...')
+    setToast('Сохранение настроек...', true)
 
     // подобным образом мы хоть как-то оптимизируем обновление списка
     if (!skipTimer) {
@@ -553,26 +553,89 @@ async function updateTopics(elTopics, skipTimer) {
         li.id = key
     }
 
-    setToast('Настройки сохранены', true)
+    setToast('Настройки сохранены')
 }
 
 let saveTimer
-function setToast(text, hide) {
-    clearInterval(saveTimer)
-    message.textContent = text
-    if (!hide) {
-        toast.classList.add('show')
+function setToast(text, loading, color='#4CAF50') {
+    clearTimeout(saveTimer?.getTimerId())
+    message.textContent = ''
+    conventPlainTextToLinks(text, message)
+    toast.style.backgroundColor = color
+    toast.classList.add('show')
+
+    if (loading) {
         spinner.style.display = 'block'
         checkmark.style.display = 'none'
-    } else {
+        return
+    }
+
+    let timeout = 2000
+    if (spinner.style.display === 'block') {
         spinner.style.display = 'none'
         checkmark.style.display = 'block'
-        saveTimer = setTimeout(() => toast.classList.remove('show'), 2000)
+    } else {
+        timeout = 7000
+        checkmark.style.display = 'none'
     }
+    saveTimer = new Timer(() => toast.classList.remove('show'), timeout)
+    if (toast.matches(':hover')) saveTimer.pause()
+}
+
+toast.addEventListener('mouseover', () => {
+    if (!saveTimer) return
+    saveTimer.pause()
+})
+toast.addEventListener('mouseout', () => {
+    if (!saveTimer) return
+    saveTimer.resume()
+})
+
+function conventPlainTextToLinks(t, out) {
+    const r = /(\b(?:https?:\/\/|www\.)\S+)/gi
+
+    const matches = [...t.matchAll(r)]
+    if (!matches.length) { // нет ссылок
+        out.textContent = t
+        return
+    }
+
+    let i = 0
+    for (const m of matches) {
+        out.append(t.slice(i, m.index))
+        const a = document.createElement('a')
+        a.textContent = m[0]
+        a.href = m[0].startsWith('http') ? m[0] : 'https://' + m[0]
+        a.target = '_blank'
+        out.append(a)
+        i = m.index + m[0].length
+    }
+    out.append(t.slice(i))
 }
 
 function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+let Timer = function(callback, delay) {
+    let timerId, start, remaining = delay
+
+    this.pause = function() {
+        clearTimeout(timerId)
+        remaining -= Date.now() - start
+    }
+
+    this.resume = function() {
+        start = Date.now()
+        clearTimeout(timerId)
+        timerId = setTimeout(callback, remaining)
+    }
+
+    this.getTimerId = function () {
+        return timerId
+    }
+
+    this.resume()
 }
 
 /*Звезды на кнопке доната*/
