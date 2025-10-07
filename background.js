@@ -20,7 +20,7 @@ let lastScore
 
 class TopicError extends Error {}
 
-const dbVersion = 19
+const dbVersion = 20
 const initializeFunc = init()
 waitUntil(initializeFunc)
 initializeFunc.finally(() => initializeFunc.done = true)
@@ -122,6 +122,15 @@ async function init() {
             console.log('Этап обновления с версии 18 на 19')
             settings = await transaction.objectStore('other').get('settings')
             settings.positionStatus = 'bottom-left'
+            await transaction.objectStore('other').put(settings, 'settings')
+        }
+
+        if (oldVersion <= 19) {
+            console.log('Этап обновления с версии 19 на 20')
+            settings = await transaction.objectStore('other').get('settings')
+            if (settings.mode !== 'disabled' && settings.mode !== 'manual') {
+                settings.mode = 'manual'
+            }
             await transaction.objectStore('other').put(settings, 'settings')
         }
 

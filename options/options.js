@@ -5,7 +5,7 @@ document.querySelector('#version').textContent = 'Версия ' + chrome.runtim
 
 let db, settings
 async function init() {
-    db = await idb.openDB('nmo', 19)
+    db = await idb.openDB('nmo', 20)
     self.db = db
     settings = await db.get('other', 'settings')
     self.settings = settings
@@ -24,8 +24,15 @@ document.addEventListener('DOMContentLoaded', async ()=> {
     const nav_btns = document.querySelectorAll('nav button')
     const blocks = document.querySelectorAll('div.block')
     nav_btns.forEach((el)=> {
-        el.addEventListener('click', () => {
+        el.addEventListener('click', (event) => {
             const mode = el.getAttribute('data-block')
+
+            // TODO panic
+            if (!event.shiftKey && mode !== 'disabled' && mode !== 'manual') {
+                event.preventDefault()
+                setToast('Временно отключено разработчиком', false, 'indianred')
+                return
+            }
 
             blocks.forEach((block) => {
                 if (block.getAttribute('data-block').split(' ').includes(el.getAttribute('data-block'))) {
