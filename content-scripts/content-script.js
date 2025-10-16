@@ -52,7 +52,12 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     } else if (message.stop) {
         stop()
     } else if (message.hasTest) {
-        const hasTest = Boolean(document.querySelector('.v-tabsheet-caption-close')) || Boolean(document.querySelector('lib-quiz-page'))
+        let hasTest
+        if (settings.mode === 'semi-auto') {
+            hasTest = Boolean(document.querySelector('lib-quiz-page')) && !Boolean(document.querySelector('.questionList'))
+        } else {
+            hasTest = Boolean(document.querySelector('.v-tabsheet-caption-close')) || Boolean(document.querySelector('lib-quiz-page'))
+        }
         sendResponse({hasTest})
     } else if (message.status) {
         osReceiveStatus(message)
@@ -100,15 +105,20 @@ async function answerQuestion() {
     // ждём когда прогрузится кнопка следующий вопрос, или завершить тест, или результаты тестов
     await globalObserver.waitFor('.question-buttons-one-primary:not([disabled="true"],[style="display: none;"]), .question-buttons-primary:not([disabled="true"],[style="display: none;"]), .questionList')
 
+    const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
+
     // сбор правильных и не правильных ответов
     if (document.querySelector('.questionList')) {
         // sendResults()
+        if (settings.mode === 'semi-auto') {
+            port.postMessage({done: true, topic, hasTest: false})
+            return
+        }
         await wait(1000)
         await simulateClick(document.querySelector('.mdc-button.mat-primary'))
         return
     }
 
-    const topic = (document.querySelector('.expansion-panel-title') || document.querySelector('.mat-mdc-card-title')).textContent.trim()
     if (!settings.goodScore && topic.includes(' - Предварительное тестирование')) {
         if (document.querySelector('.expansion-panel-custom_toggle-title')?.textContent === 'Развернуть') {
             await simulateClick(document.querySelector('.expansion-panel-custom_toggle-title'))
@@ -285,6 +295,14 @@ async function start(collectAnswers) {
     }
     if (collectAnswers) port.postMessage({collectAnswers})
 
+    countSaveAnswers = 0
+    countAnsweredAnswers = 0
+
+    if (settings.mode === 'semi-auto') {
+        runTest()
+        return
+    }
+
     startRepeat++
     if (startRepeat > settings.maxAttemptsNext) {
         const back = document.querySelector('.v-button-blue-button.v-button-icon-align-right')?.parentElement?.firstElementChild
@@ -296,9 +314,6 @@ async function start(collectAnswers) {
         chrome.runtime.sendMessage({reloadPage: true, error: 'Слишком много попыток запуска теста или перейти на следующий этап'})
         return
     }
-
-    countSaveAnswers = 0
-    countAnsweredAnswers = 0
 
     await globalObserver.waitFor('.v-app-loading', {remove: true})
 

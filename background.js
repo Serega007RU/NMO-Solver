@@ -585,7 +585,7 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
             return
         } else if (!hasTest) {
             chrome.action.setTitle({title: chrome.runtime.getManifest().action.default_title})
-            showNotification('Ошибка', 'На данной странице нет теста или не назначены тесты в настройках')
+            showNotification('Ошибка', 'На данной странице нет теста' + (settings.mode === 'auto' ? ' или не назначены тесты в настройках' : ''))
             stop(tab.id)
             return
         } else if (hasError) {
