@@ -286,6 +286,13 @@ let hasBack = false
 async function start(collectAnswers) {
     if (stopRunning) return
     if (!running) return
+
+    if (!document.querySelector('.v-tabsheet-caption-close') && !document.querySelector('lib-quiz-page')) {
+        chrome.runtime.sendMessage({stopError: 'На странице нет теста'})
+        stop()
+        return
+    }
+
     if (!globalObserver) globalObserver = new GlobalSelectorMutationObserver()
     listenQuestions(true)
     if (!port) {

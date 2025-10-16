@@ -509,6 +509,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             settings = await db.get('other', 'settings')
             self.settings = settings
         })()
+    } else if (message.stopError) {
+        if (runningTab !== sender.tab.id) {
+            console.warn('От вкладки пришёл запрос на перезагрузку но id не соответствует с runningTab', runningTab, sender.tab.id, sender, message)
+        }
+        showNotification('Ошибка', message.stopError)
+        stop(sender.tab.id)
     } else if (!message.authData) {
         console.warn('Неизвестное сообщение от вкладки', message, sender)
     }
