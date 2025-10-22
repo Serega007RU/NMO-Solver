@@ -24,7 +24,8 @@
 		"scripting"
 	],
 	"host_permissions": [
-		"https://*.edu.rosminzdrav.ru/*"
+		"https://*.edu.rosminzdrav.ru/*",
+		"https://nmo-solver.com/*"
 	],
 	"action": {
 		"default_title": "Нажмите что бы запустить"

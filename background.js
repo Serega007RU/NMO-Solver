@@ -1542,7 +1542,7 @@ function getCombinations(items, multi) {
 async function sendResultsToServer(results, topic) {
     if (settings.offlineMode || !settings.sendResults) return
     try {
-        const response = await fetch('https://serega007.ru/api/v3/saveResults', {
+        const response = await fetch('https://nmo-solver.com/api/v3/saveResults', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({results, topic}),
@@ -1564,7 +1564,7 @@ async function sendResultsToServer(results, topic) {
 async function getAnswersByQuestionFromServer(question) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/api/v3/getQuestionByName', {
+        const response = await fetch('https://nmo-solver.com/api/v3/getQuestionByName', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: question}),
@@ -1588,7 +1588,7 @@ async function getAnswersByQuestionFromServer(question) {
 async function getAnswersByTopicFromServer(topicName) {
     if (settings.offlineMode) return
     try {
-        const response = await fetch('https://serega007.ru/api/v3/getQuestionsByTopic', {
+        const response = await fetch('https://nmo-solver.com/api/v3/getQuestionsByTopic', {
             headers: {'Content-Type': 'application/json', 'X-Extension-Version': chrome.runtime.getManifest().version},
             method: 'POST',
             body: JSON.stringify({name: topicName}),
