@@ -72,6 +72,11 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
             }
         }, 10)
         return true
+    } else if (message.reanswer) {
+        if (document.querySelector('.question-inner-html-text')) {
+            highlightAnswers(true)
+            sendQuestion()
+        }
     }
 })
 
@@ -94,6 +99,17 @@ async function portListener(message) {
         console.warn('Не соответствие сообщения, возможно в процесс вмешался пользователь', message, cachedMessage.question.question)
         return
     }
+
+    if (message.error?.endsWith('Необходимо пройти проверку на робота')) {
+        if (document.visibilityState === 'visible') {
+            chrome.runtime.sendMessage({needPassChallenge: true})
+        } else if (running || started) {
+            chrome.runtime.sendMessage({stopError: 'Необходимо пройти проверку на робота'})
+            stop()
+        }
+        return
+    }
+
     if (settings.mode === 'manual' || !running || !started) return
 
     await answerQuestion()

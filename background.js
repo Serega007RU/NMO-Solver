@@ -515,6 +515,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         showNotification('Ошибка', message.stopError)
         stop(sender.tab.id)
+    } else if (message.needPassChallenge) {
+        passChallenge(sender.tab.id)
     } else if (!message.authData) {
         console.warn('Неизвестное сообщение от вкладки', message, sender)
     }
@@ -562,6 +564,11 @@ async function start(tab, {hasTest, done, hasError, forceReload}) {
     }
     if (started > (settings.maxReloadTest + 1)) {
         showNotification('Ошибка', 'Слишком много попыток запустить тест')
+        stop(tab.id)
+        return
+    }
+    if (hasOpenedChallenge) {
+        showNotification('Ошибка', 'Пройдите проверку на робота')
         stop(tab.id)
         return
     }
@@ -1539,6 +1546,51 @@ function getCombinations(items, multi) {
     return combinations
 }
 
+let hasOpenedChallenge, lastOpenedChallenge
+async function passChallenge(sender) {
+    if (Date.now() - lastOpenedChallenge <= 30000) return
+    if (hasOpenedChallenge) {
+        if (typeof hasOpenedChallenge === 'number') {
+            await chrome.windows.update(hasOpenedChallenge, {focused: true})
+        }
+        return
+    }
+
+    hasOpenedChallenge = true
+    lastOpenedChallenge = Date.now()
+
+    const popup = await chrome.windows.create({url: 'https://nmo-solver.com/challenge', type: 'popup'})
+    hasOpenedChallenge = popup.id
+
+    async function listenerOnUpdated(tabId, changeInfo/*, tab*/) {
+        if (tabId === popup.tabs[0].id) {
+            if (changeInfo.url?.endsWith('done.html')) {
+                chrome.tabs.onUpdated.removeListener(listenerOnUpdated)
+                chrome.windows.onRemoved.removeListener(listenerOnRemoved)
+                await wait(1500)
+                try {
+                    await chrome.tabs.sendMessage(sender, {reanswer: true})
+                } catch (error) {}
+                try {
+                    await chrome.windows.remove(popup.id)
+                } catch (error) {}
+                hasOpenedChallenge = false
+            }
+        }
+    }
+
+    function listenerOnRemoved(closedWindowId) {
+        if (closedWindowId === popup.id) {
+            chrome.tabs.onUpdated.removeListener(listenerOnUpdated)
+            chrome.windows.onRemoved.removeListener(listenerOnRemoved)
+            hasOpenedChallenge = false
+        }
+    }
+
+    chrome.tabs.onUpdated.addListener(listenerOnUpdated)
+    chrome.windows.onRemoved.addListener(listenerOnRemoved)
+}
+
 async function sendResultsToServer(results, topic) {
     if (settings.offlineMode || !settings.sendResults) return
     try {
@@ -1549,6 +1601,9 @@ async function sendResultsToServer(results, topic) {
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
         if (response.headers.get('content-type').includes('text/html')) {
+            if (response.headers.get('cf-mitigated') === 'challenge') {
+                return {error: 'Не удалось связаться с сервером ответов\nНеобходимо пройти проверку на робота'}
+            }
             const text = await response.text()
             return {error: text}
         }
@@ -1571,6 +1626,9 @@ async function getAnswersByQuestionFromServer(question) {
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
         if (response.headers.get('content-type').includes('text/html')) {
+            if (response.headers.get('cf-mitigated') === 'challenge') {
+                return {error: 'Не удалось связаться с сервером ответов\nНеобходимо пройти проверку на робота'}
+            }
             const text = await response.text()
             return {error: text}
         }
@@ -1595,6 +1653,9 @@ async function getAnswersByTopicFromServer(topicName) {
             signal: AbortSignal.timeout(Math.random() * (settings.timeoutReloadTabMax - settings.timeoutReloadTabMin) + settings.timeoutReloadTabMin)
         })
         if (response.headers.get('content-type').includes('text/html')) {
+            if (response.headers.get('cf-mitigated') === 'challenge') {
+                return {error: 'Не удалось связаться с сервером ответов\nНеобходимо пройти проверку на робота'}
+            }
             const text = await response.text()
             return {error: text}
         }
